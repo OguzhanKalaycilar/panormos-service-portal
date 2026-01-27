@@ -4,7 +4,7 @@ import { Session } from '@supabase/supabase-js';
 import { Profile } from '../types';
 import toast from 'react-hot-toast';
 
-const MAX_LOADING_TIME = 8000;
+const MAX_AUTH_LOADING_TIME = 5000; // Reduced to 5s for better UX
 
 interface AuthContextType {
   session: Session | null;
@@ -21,12 +21,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchOrCreateProfile = async (session: Session): Promise<Profile | null> => {
+  const fetchOrCreateProfile = async (currentSession: Session) => {
     try {
         const { data, error } = await supabase
             .from('profiles')
             .select('*')
-            .eq('id', session.user.id)
+            .eq('id', currentSession.user.id)
             .maybeSingle();
 
         if (error) {
@@ -38,11 +38,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const { data: newProfile, error: createError } = await supabase
                 .from('profiles')
                 .insert({
-                    id: session.user.id,
-                    email: session.user.email,
-                    full_name: session.user.user_metadata?.full_name || 'Kullanıcı',
+                    id: currentSession.user.id,
+                    email: currentSession.user.email,
+                    full_name: currentSession.user.user_metadata?.full_name || 'Kullanıcı',
                     role: 'customer',
-                    phone: session.user.user_metadata?.phone || '',
+                    phone: currentSession.user.user_metadata?.phone || '',
                 })
                 .select()
                 .single();
@@ -64,31 +64,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     let mounted = true;
 
+    // Safety timeout to prevent infinite splash screen
     const safetyTimeout = setTimeout(() => {
       if (mounted && loading) {
-        console.warn(`Auth loading timed out. Forcing UI render.`);
+        console.warn(`Auth loading timed out at ${MAX_AUTH_LOADING_TIME}ms. Forcing UI render.`);
         setLoading(false);
       }
-    }, MAX_LOADING_TIME);
+    }, MAX_AUTH_LOADING_TIME);
 
     const initializeAuth = async () => {
       try {
-        const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
+        const { data: { session: initialSession } } = await supabase.auth.getSession();
         
         if (mounted) {
+          setSession(initialSession);
+          // Finish main app loading immediately after session is known
+          setLoading(false);
+          clearTimeout(safetyTimeout);
+
+          // Fetch profile in background
           if (initialSession) {
-            setSession(initialSession);
             const userProfile = await fetchOrCreateProfile(initialSession);
             if (mounted) setProfile(userProfile);
           }
         }
       } catch (error: any) {
         console.error("Auth Initialization Error:", error);
-      } finally {
-        if (mounted) {
-            setLoading(false);
-            clearTimeout(safetyTimeout);
-        }
+        if (mounted) setLoading(false);
       }
     };
 
@@ -108,7 +110,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (newSession) {
         setSession(newSession);
-        // Sync profile on login or token refresh
+        // Background sync
         const userProfile = await fetchOrCreateProfile(newSession);
         if (mounted) setProfile(userProfile);
       }

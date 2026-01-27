@@ -107,7 +107,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ initialMode = 'login' }) => {
               <AnchorLogo className="w-14 h-14" large={true} />
            </div>
            <h2 className="text-4xl font-serif font-bold text-zinc-100 mb-3 tracking-tight">
-             {mode === 'login' ? 'Tekrar Hoşgeldiniz' : 'Hesap Oluştur'}
+             {mode === 'login' ? 'Hoşgeldiniz' : 'Hesap Oluştur'}
            </h2>
            <p className="text-zinc-400 text-sm">
              {mode === 'login' 

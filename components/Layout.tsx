@@ -42,8 +42,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               <h1 className="font-serif text-lg md:text-xl font-bold tracking-wider text-zinc-100 group-hover:text-white transition-colors">
                 PANORMOS <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-yellow-600">TATTOO</span>
               </h1>
-              <p className="text-[10px] text-zinc-500 uppercase tracking-[0.2em] leading-none group-hover:text-zinc-400 transition-colors">
-                Technical Service
+              <p className="text-[10px] text-zinc-500 tracking-[0.2em] leading-none group-hover:text-zinc-400 transition-colors">
+                TECHNICAL SERVICE
               </p>
             </div>
           </div>

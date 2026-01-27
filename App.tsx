@@ -129,7 +129,7 @@ const SplashScreen = () => {
                 <h1 className="font-serif text-3xl md:text-4xl font-bold tracking-wider text-zinc-100 mb-3 text-center">
                     PANORMOS <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-yellow-600">TATTOO</span>
                 </h1>
-                <p className="text-xs text-zinc-500 uppercase tracking-[0.3em] mb-12">Technical Service Portal</p>
+                <p className="text-xs text-zinc-500 tracking-[0.3em] mb-12">TECHNICAL SERVICE PORTAL</p>
                 
                 {!isTimingOut ? (
                     <div className="flex flex-col items-center gap-4">
