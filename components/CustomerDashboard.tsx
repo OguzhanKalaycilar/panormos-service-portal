@@ -98,11 +98,13 @@ const CustomerDashboard: React.FC = () => {
   const handleOpenDetail = (req: ServiceRequest) => {
       setSelectedRequest(req);
       fetchNotes(req.id);
+      document.body.style.overflow = 'hidden';
   };
 
   const handleCloseDetail = () => {
       setSelectedRequest(null);
       setNotes([]);
+      document.body.style.overflow = 'auto';
   };
 
   const fetchNotes = async (requestId: number) => {
@@ -249,24 +251,29 @@ const CustomerDashboard: React.FC = () => {
       </div>
 
       {selectedRequest && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-4">
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4">
           <div className="absolute inset-0 bg-black/90 backdrop-blur-sm" onClick={handleCloseDetail}></div>
-          <div className="bg-zinc-950 border-t md:border border-white/10 w-full max-w-5xl h-full md:h-auto md:max-h-[90vh] md:rounded-3xl shadow-2xl relative flex flex-col overflow-hidden animate-in slide-in-from-bottom md:zoom-in-95 duration-200">
-            <div className="p-4 md:p-6 border-b border-white/5 flex items-start justify-between bg-zinc-900/30">
-              <div className="min-w-0">
-                <h3 className="text-lg md:text-xl font-serif font-bold text-zinc-100 truncate mb-1">
+          <div className="bg-zinc-950 border-t md:border border-white/10 w-full max-w-5xl h-[92vh] md:h-auto md:max-h-[90vh] md:rounded-3xl shadow-2xl relative flex flex-col overflow-hidden animate-in slide-in-from-bottom md:zoom-in-95 duration-200">
+            {/* STICKY HEADER FOR CLOSE BUTTON */}
+            <div className="sticky top-0 z-30 p-5 md:p-6 border-b border-white/10 flex items-center justify-between bg-zinc-900/90 backdrop-blur-md">
+              <div className="min-w-0 pr-4">
+                <h3 className="text-lg md:text-xl font-serif font-bold text-zinc-100 truncate mb-1 leading-tight">
                    {selectedRequest.brand} {selectedRequest.model}
                 </h3>
                 <StatusBadge status={selectedRequest.status} />
               </div>
-              <button onClick={handleCloseDetail} className="p-2 bg-zinc-900 rounded-full text-zinc-400 border border-white/5">
-                <X className="w-5 h-5" />
+              <button 
+                onClick={handleCloseDetail} 
+                className="shrink-0 p-3 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-zinc-100 border border-white/10 shadow-lg active:scale-90 transition-all"
+                aria-label="Kapat"
+              >
+                <X className="w-6 h-6" />
               </button>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-4 md:p-6">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
-                    <div className="glass-panel rounded-2xl p-5 md:p-6 bg-zinc-900/40">
+            <div className="flex-1 overflow-y-auto p-5 md:p-8 space-y-8">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div className="glass-panel rounded-2xl p-6 md:p-8 bg-zinc-900/40">
                         <h4 className="text-[10px] font-bold text-amber-500 uppercase tracking-widest mb-6 flex items-center gap-2 border-b border-white/5 pb-4">
                             <History className="w-3.5 h-3.5"/> Onarım Geçmişi
                         </h4>
@@ -276,11 +283,11 @@ const CustomerDashboard: React.FC = () => {
                             ) : (
                                 notes.map((note) => (
                                     <div key={note.id} className="relative pl-6 pb-6 border-l border-zinc-800 last:border-0 last:pb-0">
-                                        <div className="absolute -left-[5px] top-1 w-2.5 h-2.5 rounded-full bg-amber-500 ring-4 ring-zinc-950"></div>
-                                        <div className="text-[9px] text-zinc-500 font-mono mb-2">
+                                        <div className="absolute -left-[5.5px] top-1.5 w-2.5 h-2.5 rounded-full bg-amber-500 ring-4 ring-zinc-950"></div>
+                                        <div className="text-[10px] text-zinc-500 font-mono mb-2">
                                             {new Date(note.created_at).toLocaleString('tr-TR')}
                                         </div>
-                                        <div className="text-xs text-zinc-300 bg-zinc-900 border border-white/5 p-3 rounded-xl">
+                                        <div className="text-sm text-zinc-300 bg-zinc-900/80 border border-white/5 p-4 rounded-xl shadow-sm">
                                             {note.note}
                                         </div>
                                     </div>
@@ -289,29 +296,29 @@ const CustomerDashboard: React.FC = () => {
                         </div>
                     </div>
                     
-                    <div className="space-y-6">
-                        <div className="glass-panel p-5 rounded-2xl bg-zinc-900/40">
-                            <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">Arıza Açıklaması</h4>
+                    <div className="space-y-8">
+                        <div className="glass-panel p-6 rounded-2xl bg-zinc-900/40 border border-white/5 shadow-inner">
+                            <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-4">Arıza Açıklaması</h4>
                             <p className="text-zinc-300 text-sm leading-relaxed whitespace-pre-wrap">{selectedRequest.description}</p>
                         </div>
                         <div>
                             <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-4">Medya Kanıtlar</h4>
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                                 {selectedRequest.media_urls?.map((media, idx) => (
                                     <div 
                                         key={idx} 
-                                        className="aspect-square bg-zinc-900 rounded-xl overflow-hidden border border-zinc-800 relative group cursor-pointer"
+                                        className="aspect-square bg-zinc-900 rounded-2xl overflow-hidden border border-zinc-800 relative group cursor-pointer shadow-md"
                                         onClick={() => setLightboxMedia({url: media.url, type: media.type})}
                                     >
                                         {media.type === 'image' ? (
-                                            <img src={media.url} className="w-full h-full object-cover" alt="Service evidence" />
+                                            <img src={media.url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" alt="Service evidence" />
                                         ) : (
-                                            <div className="w-full h-full flex items-center justify-center">
-                                                <Play className="w-6 h-6 text-amber-500" />
+                                            <div className="w-full h-full flex items-center justify-center bg-zinc-900">
+                                                <Play className="w-8 h-8 text-amber-500" />
                                             </div>
                                         )}
-                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                            <Maximize2 className="w-5 h-5 text-white" />
+                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[2px]">
+                                            <Maximize2 className="w-6 h-6 text-white" />
                                         </div>
                                     </div>
                                 ))}
@@ -319,6 +326,7 @@ const CustomerDashboard: React.FC = () => {
                         </div>
                     </div>
                 </div>
+                <div className="h-10 md:hidden"></div> {/* Extra space for mobile thumb scrolling */}
             </div>
           </div>
         </div>
@@ -326,25 +334,25 @@ const CustomerDashboard: React.FC = () => {
 
       {lightboxMedia && (
         <div 
-            className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-md flex items-center justify-center p-4"
+            className="fixed inset-0 z-[100] bg-black/98 backdrop-blur-xl flex items-center justify-center p-4 md:p-10"
             onClick={() => setLightboxMedia(null)}
         >
-           <button className="absolute top-6 right-6 p-2 bg-zinc-800 rounded-full text-white">
-              <X className="w-6 h-6" />
+           <button className="absolute top-6 right-6 p-4 bg-zinc-800/80 rounded-full text-white border border-white/10 shadow-2xl z-[110] active:scale-90 transition-transform">
+              <X className="w-7 h-7" />
            </button>
            <div className="max-w-full max-h-full flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
                 {lightboxMedia.type === 'image' ? (
                     <img 
                         src={lightboxMedia.url} 
                         alt="Zoomed evidence" 
-                        className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl" 
+                        className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-[0_0_50px_rgba(0,0,0,0.8)]" 
                     />
                 ) : (
                     <video 
                         src={lightboxMedia.url} 
                         controls
                         autoPlay
-                        className="max-w-full max-h-[85vh] rounded-lg" 
+                        className="max-w-full max-h-[85vh] rounded-xl shadow-2xl" 
                     />
                 )}
            </div>

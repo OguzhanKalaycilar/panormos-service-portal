@@ -323,6 +323,7 @@ const AdminDashboard: React.FC = () => {
   const handleOpenDetail = (req: ServiceRequest) => {
     setSelectedRequest(req);
     fetchNotes(req.id);
+    document.body.style.overflow = 'hidden';
   };
 
   const handleCloseDetail = () => {
@@ -330,6 +331,7 @@ const AdminDashboard: React.FC = () => {
     setNotes([]);
     setNewNote('');
     setNoteFile(null);
+    document.body.style.overflow = 'auto';
   };
 
   const toggleStatus = async (id: number, currentStatus: string) => {
@@ -504,11 +506,13 @@ const AdminDashboard: React.FC = () => {
   const handleOpenStockDetail = (item: BrokenStockItem) => {
       setSelectedStock(item);
       setEditStockData(item);
+      document.body.style.overflow = 'hidden';
   };
 
   const handleCloseStockDetail = () => {
       setSelectedStock(null);
       setEditStockData({});
+      document.body.style.overflow = 'auto';
   };
 
   const handleUpdateStock = async () => {
@@ -1062,17 +1066,19 @@ const AdminDashboard: React.FC = () => {
       )}
 
       {selectedStock && (
-         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+         <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4">
             <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={handleCloseStockDetail}></div>
-            <div className="bg-zinc-950/90 backdrop-blur-2xl border border-white/10 w-full max-w-2xl rounded-3xl shadow-2xl relative flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
-                <div className="p-6 border-b border-white/5 flex items-center justify-between bg-zinc-900/50">
-                   <h3 className="text-xl font-bold text-zinc-100 flex items-center gap-2">
-                      <Package className="w-5 h-5 text-amber-500" /> Stok Detayı
+            <div className="bg-zinc-950/90 backdrop-blur-2xl border border-white/10 w-full max-w-2xl h-[92vh] md:h-auto rounded-t-3xl md:rounded-3xl shadow-2xl relative flex flex-col overflow-hidden animate-in slide-in-from-bottom md:zoom-in-95 duration-200">
+                <div className="sticky top-0 z-20 p-5 md:p-6 border-b border-white/10 flex items-center justify-between bg-zinc-900/90 backdrop-blur-md">
+                   <h3 className="text-xl font-bold text-zinc-100 flex items-center gap-3">
+                      <Package className="w-6 h-6 text-amber-500" /> Stok Detayı
                    </h3>
-                   <button onClick={handleCloseStockDetail} className="p-2 hover:bg-zinc-800 rounded-full"><X className="w-5 h-5 text-zinc-400"/></button>
+                   <button onClick={handleCloseStockDetail} className="p-3 hover:bg-zinc-800 rounded-2xl text-zinc-100 border border-white/5 active:scale-90 transition-all">
+                      <X className="w-6 h-6" />
+                   </button>
                 </div>
                 
-                <div className="p-6 overflow-y-auto max-h-[80vh] space-y-6">
+                <div className="p-6 overflow-y-auto space-y-6">
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1">
                            <label className="text-xs font-bold text-zinc-500 uppercase">Marka</label>
@@ -1080,7 +1086,7 @@ const AdminDashboard: React.FC = () => {
                               type="text" 
                               value={editStockData.brand || ''} 
                               onChange={e => setEditStockData({...editStockData, brand: e.target.value})}
-                              className="w-full bg-black/50 border border-zinc-700 rounded-lg p-3 text-sm text-zinc-200"
+                              className="w-full bg-black/50 border border-zinc-700 rounded-xl p-4 text-sm text-zinc-200"
                            />
                         </div>
                         <div className="space-y-1">
@@ -1089,18 +1095,18 @@ const AdminDashboard: React.FC = () => {
                               type="text" 
                               value={editStockData.model || ''} 
                               onChange={e => setEditStockData({...editStockData, model: e.target.value})}
-                              className="w-full bg-black/50 border border-zinc-700 rounded-lg p-3 text-sm text-zinc-200"
+                              className="w-full bg-black/50 border border-zinc-700 rounded-xl p-4 text-sm text-zinc-200"
                            />
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4 p-4 bg-zinc-900/30 rounded-xl border border-white/5">
+                    <div className="grid grid-cols-2 gap-4 p-4 bg-zinc-900/30 rounded-2xl border border-white/5 shadow-inner">
                         <div className="space-y-1">
                             <label className="text-xs font-bold text-zinc-500 uppercase">Stok Durumu</label>
                             <select 
                                 value={editStockData.status || 'waiting'}
                                 onChange={e => setEditStockData({...editStockData, status: e.target.value as any})}
-                                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg p-3 text-sm text-zinc-200 appearance-none"
+                                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-4 text-sm text-zinc-200 appearance-none"
                             >
                                 <option value="waiting">BEKLİYOR</option>
                                 <option value="in_repair">TAMİRDE</option>
@@ -1115,7 +1121,7 @@ const AdminDashboard: React.FC = () => {
                                 min="0"
                                 value={editStockData.quantity || 0} 
                                 onChange={e => setEditStockData({...editStockData, quantity: parseInt(e.target.value)})}
-                                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg p-3 text-sm text-zinc-200"
+                                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-4 text-sm text-zinc-200"
                             />
                         </div>
                     </div>
@@ -1126,7 +1132,7 @@ const AdminDashboard: React.FC = () => {
                             <select 
                                 value={editStockData.cosmetic_condition || 'Sıfır Ayarında'}
                                 onChange={e => setEditStockData({...editStockData, cosmetic_condition: e.target.value})}
-                                className="w-full bg-black/50 border border-zinc-700 rounded-lg p-3 text-sm text-zinc-200 appearance-none"
+                                className="w-full bg-black/50 border border-zinc-700 rounded-xl p-4 text-sm text-zinc-200 appearance-none"
                             >
                                 <option value="Sıfır Ayarında">Sıfır Ayarında</option>
                                 <option value="Hafif Aşınma">Hafif Aşınma</option>
@@ -1138,7 +1144,7 @@ const AdminDashboard: React.FC = () => {
                             <select 
                                 value={editStockData.failure_reason || 'Diğer'}
                                 onChange={e => setEditStockData({...editStockData, failure_reason: e.target.value})}
-                                className="w-full bg-black/50 border border-zinc-700 rounded-lg p-3 text-sm text-zinc-200 appearance-none"
+                                className="w-full bg-black/50 border border-zinc-700 rounded-xl p-4 text-sm text-zinc-200 appearance-none"
                             >
                                 <option value="Diğer">Diğer</option>
                                 <option value="Motor Arızası">Motor Arızası</option>
@@ -1154,7 +1160,7 @@ const AdminDashboard: React.FC = () => {
                             <textarea 
                                 value={editStockData.missing_parts || ''} 
                                 onChange={e => setEditStockData({...editStockData, missing_parts: e.target.value})}
-                                className="w-full bg-black/50 border border-zinc-700 rounded-lg p-3 text-sm text-zinc-200 min-h-[60px]"
+                                className="w-full bg-black/50 border border-zinc-700 rounded-xl p-4 text-sm text-zinc-200 min-h-[80px] resize-none"
                                 placeholder="Yok"
                             />
                         </div>
@@ -1163,23 +1169,24 @@ const AdminDashboard: React.FC = () => {
                             <textarea 
                                 value={editStockData.notes || ''} 
                                 onChange={e => setEditStockData({...editStockData, notes: e.target.value})}
-                                className="w-full bg-black/50 border border-zinc-700 rounded-lg p-3 text-sm text-zinc-200 min-h-[80px]"
+                                className="w-full bg-black/50 border border-zinc-700 rounded-xl p-4 text-sm text-zinc-200 min-h-[100px] resize-none"
                                 placeholder="Servis notları..."
                             />
                         </div>
                     </div>
+                    <div className="h-6 md:hidden"></div>
                 </div>
 
-                <div className="p-6 border-t border-white/5 bg-zinc-900/50 flex items-center justify-between">
+                <div className="p-6 border-t border-white/5 bg-zinc-900/50 flex flex-col md:flex-row items-center justify-between gap-4">
                     <button 
                         onClick={handleDeleteStock}
-                        className="flex items-center gap-2 px-4 py-2 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors text-sm font-medium"
+                        className="w-full md:w-auto flex items-center justify-center gap-2 px-6 py-3 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl transition-colors text-sm font-bold border border-red-500/10"
                     >
-                        <Trash2 className="w-4 h-4" /> Sil
+                        <Trash2 className="w-4 h-4" /> Kaydı Sil
                     </button>
-                    <div className="flex gap-3">
-                        <button onClick={handleCloseStockDetail} className="px-6 py-2 bg-zinc-800 text-zinc-300 rounded-lg hover:bg-zinc-700 font-medium">İptal</button>
-                        <button onClick={handleUpdateStock} className="px-6 py-2 bg-amber-600 text-black font-bold rounded-lg hover:bg-amber-500 shadow-lg shadow-amber-900/20">Değişiklikleri Kaydet</button>
+                    <div className="flex gap-3 w-full md:w-auto">
+                        <button onClick={handleCloseStockDetail} className="flex-1 md:flex-none px-8 py-3 bg-zinc-800 text-zinc-300 rounded-xl hover:bg-zinc-700 font-bold transition-all border border-white/5">İptal</button>
+                        <button onClick={handleUpdateStock} className="flex-1 md:flex-none px-8 py-3 bg-amber-600 text-black font-bold rounded-xl hover:bg-amber-500 shadow-lg shadow-amber-900/20 transition-all">Kaydet</button>
                     </div>
                 </div>
             </div>
@@ -1189,28 +1196,28 @@ const AdminDashboard: React.FC = () => {
       {showDeleteConfirm && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
              <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setShowDeleteConfirm(false)}></div>
-             <div className="relative bg-zinc-950 border border-red-500/30 rounded-2xl w-full max-w-sm shadow-2xl p-6 animate-in zoom-in-95 duration-200 ring-1 ring-red-900/50">
+             <div className="relative bg-zinc-950 border border-red-500/30 rounded-3xl w-full max-w-sm shadow-2xl p-8 animate-in zoom-in-95 duration-200 ring-1 ring-red-900/50">
                   <div className="flex flex-col items-center text-center">
-                      <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mb-4 ring-1 ring-red-500/30 shadow-[0_0_15px_rgba(239,68,68,0.2)]">
-                          <AlertTriangle className="w-8 h-8 text-red-500" />
+                      <div className="w-20 h-20 rounded-full bg-red-500/10 flex items-center justify-center mb-6 ring-1 ring-red-500/30 shadow-[0_0_15px_rgba(239,68,68,0.2)]">
+                          <AlertTriangle className="w-10 h-10 text-red-500" />
                       </div>
                       <h3 className="text-xl font-serif font-bold text-zinc-100 mb-2">Kaydı Sil</h3>
-                      <p className="text-zinc-400 text-sm mb-6 leading-relaxed">
+                      <p className="text-zinc-400 text-sm mb-8 leading-relaxed">
                          Bu stok kaydını silmek üzeresiniz.<br/>
-                         <span className="text-red-400 font-medium">Bu işlem geri alınamaz.</span>
+                         <span className="text-red-400 font-bold">Bu işlem geri alınamaz.</span>
                       </p>
-                      <div className="flex gap-3 w-full">
+                      <div className="flex gap-4 w-full">
                           <button 
                              onClick={() => setShowDeleteConfirm(false)}
-                             className="flex-1 px-4 py-3 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700 hover:border-zinc-600 rounded-xl font-medium transition-all"
+                             className="flex-1 px-4 py-4 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700 hover:border-zinc-600 rounded-2xl font-bold transition-all"
                           >
                              İptal
                           </button>
                           <button 
                              onClick={executeDeleteStock}
-                             className="flex-1 px-4 py-3 bg-gradient-to-r from-red-600 to-red-800 hover:from-red-500 hover:to-red-700 text-white border border-red-500/30 rounded-xl font-bold transition-all shadow-lg shadow-red-900/30"
+                             className="flex-1 px-4 py-4 bg-gradient-to-r from-red-600 to-red-800 hover:from-red-500 hover:to-red-700 text-white border border-red-500/30 rounded-2xl font-bold transition-all shadow-lg shadow-red-900/30"
                           >
-                             Kalıcı Olarak Sil
+                             Sil
                           </button>
                       </div>
                   </div>
@@ -1219,35 +1226,40 @@ const AdminDashboard: React.FC = () => {
       )}
 
       {selectedRequest && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={handleCloseDetail}></div>
-          <div className="bg-zinc-950/90 backdrop-blur-2xl border border-white/10 w-full max-w-6xl max-h-[95vh] rounded-3xl shadow-2xl relative flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-8 border-b border-white/5 flex items-start justify-between bg-zinc-900/30">
-              <div>
-                <h3 className="text-2xl font-serif font-bold text-zinc-100 mb-2 flex items-center gap-3">
+          <div className="bg-zinc-950 border-t md:border border-white/10 w-full max-w-6xl h-[92vh] md:h-auto md:max-h-[95vh] md:rounded-3xl shadow-2xl relative flex flex-col overflow-hidden animate-in slide-in-from-bottom md:zoom-in-95 duration-200">
+            {/* STICKY HEADER FOR CLOSE BUTTON */}
+            <div className="sticky top-0 z-30 p-5 md:p-8 border-b border-white/10 flex items-center justify-between bg-zinc-900/90 backdrop-blur-md">
+              <div className="min-w-0 pr-4">
+                <h3 className="text-xl md:text-2xl font-serif font-bold text-zinc-100 mb-2 flex items-center gap-3 truncate">
                    {selectedRequest.full_name}
                    <StatusBadge status={selectedRequest.status} large />
                 </h3>
-                <div className="flex flex-wrap items-center gap-3 text-sm text-zinc-400 mt-2">
-                   <span className="flex items-center gap-2 bg-zinc-900/50 border border-white/5 px-3 py-1.5 rounded-lg"><Mail className="w-3.5 h-3.5"/> {selectedRequest.email}</span>
-                   <span className="flex items-center gap-2 bg-zinc-900/50 border border-white/5 px-3 py-1.5 rounded-lg"><Phone className="w-3.5 h-3.5"/> {selectedRequest.phone}</span>
+                <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-400">
+                   <span className="flex items-center gap-2 bg-zinc-950/50 border border-white/5 px-3 py-1.5 rounded-lg"><Mail className="w-3.5 h-3.5"/> {selectedRequest.email}</span>
+                   <span className="flex items-center gap-2 bg-zinc-950/50 border border-white/5 px-3 py-1.5 rounded-lg"><Phone className="w-3.5 h-3.5"/> {selectedRequest.phone}</span>
                 </div>
               </div>
-              <button onClick={handleCloseDetail} className="p-2.5 bg-zinc-900 hover:bg-zinc-800 rounded-full text-zinc-400 hover:text-white transition-colors border border-white/5">
+              <button 
+                onClick={handleCloseDetail} 
+                className="shrink-0 p-3 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-zinc-100 border border-white/10 shadow-lg active:scale-90 transition-all"
+                aria-label="Kapat"
+              >
                 <X className="w-6 h-6" />
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-8 bg-zinc-950/50">
+            <div className="flex-1 overflow-y-auto p-5 md:p-8 bg-zinc-950/50">
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 h-full">
                 <div className="lg:col-span-5 flex flex-col gap-6 order-2 lg:order-1 h-full">
-                   <div className="glass-panel rounded-2xl p-6 flex flex-col h-full bg-zinc-900/40">
+                   <div className="glass-panel rounded-2xl p-6 flex flex-col h-full bg-zinc-900/40 border border-white/5">
                       <h4 className="text-sm font-bold text-amber-500 uppercase tracking-widest mb-6 flex items-center gap-2 border-b border-white/5 pb-4">
-                        <History className="w-4 h-4"/> Servis İş Akışı (Timeline)
+                        <History className="w-4 h-4"/> Servis İş Akışı
                       </h4>
                       <div className="flex-1 overflow-y-auto max-h-[300px] lg:max-h-[500px] space-y-0 mb-6 pr-2 custom-scrollbar">
                          <div className="relative pl-8 pb-8 border-l border-zinc-800 last:border-0 last:pb-0">
-                             <div className="absolute -left-[5px] top-1.5 w-2.5 h-2.5 rounded-full bg-zinc-600 ring-4 ring-zinc-950"></div>
+                             <div className="absolute -left-[5.5px] top-1.5 w-2.5 h-2.5 rounded-full bg-zinc-600 ring-4 ring-zinc-950"></div>
                              <div className="flex items-center gap-2 mb-1">
                                 <div className="text-[10px] text-zinc-500 font-mono uppercase tracking-wide">
                                     {new Date(selectedRequest.created_at).toLocaleString('tr-TR')}
@@ -1260,7 +1272,7 @@ const AdminDashboard: React.FC = () => {
                          </div>
                          {notes.map((note) => (
                              <div key={note.id} className="relative pl-8 pb-8 border-l border-zinc-800 last:border-0 last:pb-0">
-                                <div className="absolute -left-[5px] top-1.5 w-2.5 h-2.5 rounded-full bg-amber-500 ring-4 ring-zinc-950"></div>
+                                <div className="absolute -left-[5.5px] top-1.5 w-2.5 h-2.5 rounded-full bg-amber-500 ring-4 ring-zinc-950"></div>
                                 <div className="flex items-center gap-2 mb-1">
                                    <div className="text-[10px] text-zinc-500 font-mono uppercase tracking-wide">
                                       {new Date(note.created_at).toLocaleString('tr-TR')}
@@ -1276,16 +1288,16 @@ const AdminDashboard: React.FC = () => {
                                        </span>
                                    )}
                                 </div>
-                                <div className="text-sm text-zinc-200 bg-zinc-900 border border-zinc-800 p-3 rounded-lg inline-block shadow-sm w-full">
-                                   <p className="whitespace-pre-wrap">{note.note}</p>
+                                <div className="text-sm text-zinc-200 bg-zinc-900 border border-zinc-800 p-4 rounded-xl inline-block shadow-sm w-full">
+                                   <p className="whitespace-pre-wrap leading-relaxed">{note.note}</p>
                                    {note.media_url && (
-                                       <div className="mt-3 rounded-lg overflow-hidden border border-zinc-700 bg-black/50 cursor-pointer hover:border-amber-500/50 transition-colors"
+                                       <div className="mt-4 rounded-xl overflow-hidden border border-zinc-700 bg-black/50 cursor-pointer hover:border-amber-500/50 transition-colors shadow-inner"
                                             onClick={() => setLightboxMedia({url: note.media_url!, type: note.media_type!})}>
                                             {note.media_type === 'image' ? (
-                                                <img src={note.media_url} alt="Note Attachment" className="w-full h-32 object-cover" />
+                                                <img src={note.media_url} alt="Note Attachment" className="w-full h-32 md:h-40 object-cover" />
                                             ) : (
-                                                <div className="w-full h-32 flex items-center justify-center">
-                                                    <Play className="w-8 h-8 text-white/80" />
+                                                <div className="w-full h-32 md:h-40 flex items-center justify-center">
+                                                    <Play className="w-10 h-10 text-white/80" />
                                                 </div>
                                             )}
                                        </div>
@@ -1298,101 +1310,103 @@ const AdminDashboard: React.FC = () => {
                       <form onSubmit={handleAddNote} className="relative mt-auto pt-4 border-t border-white/5">
                          <div className="relative flex items-center gap-2">
                              <input type="file" ref={fileInputRef} className="hidden" accept="image/*,video/*" onChange={(e) => setNoteFile(e.target.files ? e.target.files[0] : null)} />
-                             <button type="button" onClick={() => fileInputRef.current?.click()} className={`p-3 rounded-xl transition-all border border-zinc-800 ${noteFile ? 'bg-amber-500/20 text-amber-500 border-amber-500/50' : 'bg-zinc-950 text-zinc-500 hover:text-zinc-300'}`}>
-                                 {noteFile ? <ImageIcon className="w-4 h-4" /> : <Paperclip className="w-4 h-4" />}
+                             <button type="button" onClick={() => fileInputRef.current?.click()} className={`p-4 rounded-2xl transition-all border border-zinc-800 ${noteFile ? 'bg-amber-500/20 text-amber-500 border-amber-500/50' : 'bg-zinc-950 text-zinc-500 hover:text-zinc-300'}`}>
+                                 {noteFile ? <ImageIcon className="w-5 h-5" /> : <Paperclip className="w-5 h-5" />}
                              </button>
-                             <input type="text" value={newNote} onChange={(e) => setNewNote(e.target.value)} placeholder="İşlem notu ekle..." className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200 focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/50 outline-none transition-all shadow-inner"/>
-                             <button type="submit" disabled={isSendingNote} className="p-3 bg-amber-500 rounded-xl text-black hover:bg-amber-400 transition-colors shadow-lg shadow-amber-900/20 disabled:opacity-50 disabled:cursor-not-allowed">
-                                {isSendingNote ? <Loader2 className="w-4 h-4 animate-spin"/> : <Send className="w-4 h-4" />}
+                             <input type="text" value={newNote} onChange={(e) => setNewNote(e.target.value)} placeholder="Not ekle..." className="flex-1 bg-zinc-950 border border-zinc-800 rounded-2xl px-5 py-4 text-sm text-zinc-200 focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/50 outline-none transition-all shadow-inner"/>
+                             <button type="submit" disabled={isSendingNote} className="p-4 bg-amber-500 rounded-2xl text-black hover:bg-amber-400 transition-colors shadow-lg shadow-amber-900/20 disabled:opacity-50">
+                                {isSendingNote ? <Loader2 className="w-5 h-5 animate-spin"/> : <Send className="w-5 h-5" />}
                              </button>
                          </div>
                       </form>
                    </div>
                 </div>
 
-                <div className="lg:col-span-7 space-y-6 order-1 lg:order-2">
-                   <div className="glass-panel p-6 rounded-2xl bg-zinc-900/40 space-y-4">
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-2">
-                          <div className="bg-zinc-950/50 border border-zinc-800 px-4 py-2 rounded-lg">
-                              <span className="block text-[10px] uppercase text-zinc-500 font-bold mb-0.5">Marka</span>
-                              <span className="text-zinc-200">{selectedRequest.brand}</span>
+                <div className="lg:col-span-7 space-y-8 order-1 lg:order-2">
+                   <div className="glass-panel p-6 rounded-2xl bg-zinc-900/40 space-y-6 border border-white/5 shadow-inner">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          <div className="bg-zinc-950/70 border border-white/5 px-4 py-3 rounded-xl shadow-sm">
+                              <span className="block text-[10px] uppercase text-zinc-500 font-bold mb-1 tracking-wider">Marka</span>
+                              <span className="text-zinc-100 font-medium">{selectedRequest.brand}</span>
                           </div>
-                          <div className="bg-zinc-950/50 border border-zinc-800 px-4 py-2 rounded-lg">
-                              <span className="block text-[10px] uppercase text-zinc-500 font-bold mb-0.5">Model</span>
-                              <span className="text-zinc-200">{selectedRequest.model}</span>
+                          <div className="bg-zinc-950/70 border border-white/5 px-4 py-3 rounded-xl shadow-sm">
+                              <span className="block text-[10px] uppercase text-zinc-500 font-bold mb-1 tracking-wider">Model</span>
+                              <span className="text-zinc-100 font-medium">{selectedRequest.model}</span>
                           </div>
-                          <div className="bg-zinc-950/50 border border-zinc-800 px-4 py-2 rounded-lg">
-                              <span className="block text-[10px] uppercase text-zinc-500 font-bold mb-0.5">Kategori</span>
-                              <span className="text-amber-500">{selectedRequest.category}</span>
+                          <div className="bg-amber-500/5 border border-amber-500/10 px-4 py-3 rounded-xl shadow-sm">
+                              <span className="block text-[10px] uppercase text-amber-600 font-bold mb-1 tracking-wider">Kategori</span>
+                              <span className="text-amber-500 font-medium">{selectedRequest.category}</span>
                           </div>
-                          <div className="bg-zinc-950/50 border border-zinc-800 px-4 py-2 rounded-lg">
-                              <span className="block text-[10px] uppercase text-zinc-500 font-bold mb-0.5">Alım Tarihi</span>
-                              <span className="text-zinc-200">{selectedRequest.product_date}</span>
+                          <div className="bg-zinc-950/70 border border-white/5 px-4 py-3 rounded-xl shadow-sm">
+                              <span className="block text-[10px] uppercase text-zinc-500 font-bold mb-1 tracking-wider">Alım Tarihi</span>
+                              <span className="text-zinc-100 font-medium">{selectedRequest.product_date}</span>
                           </div>
                       </div>
                       <div>
-                        <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3">Sorun Açıklaması</h4>
-                        <div className="bg-zinc-950/50 p-5 rounded-xl border border-zinc-800 text-zinc-300 text-sm leading-relaxed whitespace-pre-wrap shadow-inner">
+                        <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3 ml-1">Sorun Açıklaması</h4>
+                        <div className="bg-zinc-950/70 p-6 rounded-2xl border border-white/5 text-zinc-300 text-sm leading-relaxed whitespace-pre-wrap shadow-inner">
                             {selectedRequest.description}
                         </div>
                       </div>
                       {selectedRequest.status === 'rejected' && selectedRequest.rejection_reason && (
-                        <div className="bg-red-500/10 p-5 rounded-xl border border-red-500/20 text-red-200 text-sm leading-relaxed shadow-inner">
-                            <h4 className="text-xs font-bold text-red-500 uppercase tracking-widest mb-2 flex items-center gap-2">
+                        <div className="bg-red-500/10 p-6 rounded-2xl border border-red-500/20 text-red-200 text-sm leading-relaxed shadow-lg">
+                            <h4 className="text-[10px] font-bold text-red-500 uppercase tracking-widest mb-3 flex items-center gap-2">
                                 <AlertTriangle className="w-3.5 h-3.5" /> Red Nedeni
                             </h4>
                             {selectedRequest.rejection_reason}
                         </div>
                       )}
                    </div>
-                   <div className="flex flex-col gap-4 glass-panel p-5 rounded-2xl bg-zinc-900/40">
-                      <span className="text-sm text-zinc-400 font-medium">Servis Durumu Kontrolü:</span>
-                      <div className="flex flex-wrap items-center gap-3">
+                   <div className="flex flex-col gap-5 glass-panel p-6 rounded-2xl bg-zinc-900/40 border border-white/5">
+                      <span className="text-sm text-zinc-400 font-bold ml-1 uppercase tracking-wider">İşlem Kontrolü</span>
+                      <div className="flex flex-col sm:flex-row items-center gap-4">
                         <button
                           onClick={() => toggleStatus(selectedRequest.id, selectedRequest.status)}
-                          className={`flex-1 px-6 py-3 rounded-xl text-sm font-bold transition-all shadow-lg flex items-center justify-center gap-2 min-w-[180px] ${
+                          className={`w-full sm:flex-1 px-8 py-4 rounded-2xl text-sm font-bold transition-all shadow-xl flex items-center justify-center gap-3 ${
                             selectedRequest.status === 'pending'
                             ? 'bg-green-600 hover:bg-green-500 text-white shadow-green-900/20'
                             : 'bg-amber-600 hover:bg-amber-500 text-black shadow-amber-900/20'
                           }`}
                         >
                           {selectedRequest.status === 'pending' 
-                            ? <><CheckCircle className="w-4 h-4"/> Çözüldü Olarak İşaretle</>
-                            : <><Clock className="w-4 h-4"/> Beklemeye Al</>
+                            ? <><CheckCircle className="w-5 h-5"/> Çözüldü Olarak İşaretle</>
+                            : <><Clock className="w-5 h-5"/> Beklemeye Al</>
                           }
                         </button>
                         
                         {selectedRequest.status !== 'rejected' && (
                           <button
                             onClick={() => setShowRejectModal(true)}
-                            className="flex-1 px-6 py-3 bg-red-600 hover:bg-red-500 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-red-900/20 flex items-center justify-center gap-2 min-w-[180px]"
+                            className="w-full sm:flex-1 px-8 py-4 bg-red-600 hover:bg-red-500 text-white rounded-2xl text-sm font-bold transition-all shadow-xl shadow-red-900/20 flex items-center justify-center gap-3 border border-red-500/20"
                           >
-                            <XCircle className="w-4 h-4" /> TALEBİ REDDET
+                            <XCircle className="w-5 h-5" /> Talebi Reddet
                           </button>
                         )}
                       </div>
                    </div>
                    <div>
-                      <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3">Medya Kanıtlar</h4>
+                      <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-4 ml-1">Medya Dosyaları</h4>
                       {(!selectedRequest.media_urls || selectedRequest.media_urls.length === 0) ? (
-                          <div className="text-zinc-500 text-sm italic">Medya bulunmuyor.</div>
+                          <div className="bg-zinc-900/50 p-6 rounded-2xl border border-dashed border-zinc-800 text-zinc-600 text-sm italic text-center">Medya bulunmuyor.</div>
                       ) : (
-                          <div className="grid grid-cols-3 sm:grid-cols-4 gap-4">
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                             {selectedRequest.media_urls.map((media, idx) => (
                               <div 
                                 key={idx} 
-                                className="aspect-square bg-zinc-900 rounded-xl overflow-hidden border border-zinc-800 relative group cursor-pointer hover:border-amber-500/50 transition-colors shadow-lg"
+                                className="aspect-square bg-zinc-900 rounded-2xl overflow-hidden border border-zinc-800 relative group cursor-pointer hover:border-amber-500/50 transition-all shadow-lg"
                                 onClick={() => setLightboxMedia({url: media.url, type: media.type})}
                               >
                                 {media.type === 'image' ? (
                                   <>
-                                    <img src={media.url} alt="Evidence" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
-                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">
+                                    <img src={media.url} alt="Evidence" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[2px]">
                                         <Maximize2 className="w-6 h-6 text-white drop-shadow-lg" />
                                     </div>
                                   </>
                                 ) : (
-                                  <video src={media.url} className="w-full h-full object-cover" />
+                                  <div className="w-full h-full flex items-center justify-center bg-zinc-900">
+                                      <Play className="w-10 h-10 text-amber-500" />
+                                  </div>
                                 )}
                               </div>
                             ))}
@@ -1401,6 +1415,7 @@ const AdminDashboard: React.FC = () => {
                    </div>
                 </div>
               </div>
+              <div className="h-10 md:hidden"></div>
             </div>
           </div>
         </div>
@@ -1412,39 +1427,39 @@ const AdminDashboard: React.FC = () => {
              <div className="absolute inset-0 bg-black/90 backdrop-blur-md" onClick={() => setShowRejectModal(false)}></div>
              <div className="relative bg-zinc-950 border border-red-500/30 rounded-3xl w-full max-w-lg shadow-2xl p-8 animate-in zoom-in-95 duration-300">
                   <div className="flex flex-col gap-6">
-                      <div className="flex items-center gap-4 border-b border-white/5 pb-4">
-                          <div className="p-3 bg-red-500/10 rounded-2xl border border-red-500/20">
+                      <div className="flex items-center gap-5 border-b border-white/10 pb-5">
+                          <div className="p-4 bg-red-500/10 rounded-2xl border border-red-500/20 shadow-lg">
                               <XCircle className="w-8 h-8 text-red-500" />
                           </div>
                           <div>
-                              <h3 className="text-2xl font-serif font-bold text-zinc-100">Talebi Reddet</h3>
-                              <p className="text-zinc-500 text-xs uppercase tracking-widest font-bold">Teknik Servis Red İşlemi</p>
+                              <h3 className="text-2xl font-serif font-bold text-zinc-100 leading-tight">Talebi Reddet</h3>
+                              <p className="text-zinc-500 text-[10px] uppercase tracking-[0.2em] font-bold mt-1">Servis Red İşlemi</p>
                           </div>
                       </div>
 
                       <div className="space-y-3">
-                          <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest ml-1">Red Nedeni (Müşteriye İletilecektir) *</label>
+                          <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest ml-1">Red Nedeni *</label>
                           <textarea 
                               value={rejectionReason}
                               onChange={(e) => setRejectionReason(e.target.value)}
-                              placeholder="Örn: Cihazda kullanıcı kaynaklı sıvı teması tespit edilmiştir..."
-                              className="w-full bg-black/50 border border-zinc-800 focus:border-red-500/40 rounded-2xl p-4 text-zinc-200 text-sm outline-none transition-all min-h-[150px] shadow-inner"
+                              placeholder="Müşteriye iletilecek açıklama..."
+                              className="w-full bg-black/50 border border-zinc-800 focus:border-red-500/40 rounded-2xl p-5 text-zinc-200 text-sm outline-none transition-all min-h-[160px] shadow-inner leading-relaxed"
                               required
                           />
-                          <p className="text-[10px] text-zinc-600 italic">Girilen bu açıklama müşterinin panelinde ve zaman tünelinde görüntülenecektir.</p>
+                          <p className="text-[10px] text-zinc-600 italic px-1">Bu açıklama müşterinin zaman tüneline yansıyacaktır.</p>
                       </div>
 
                       <div className="flex gap-4">
                           <button 
                              onClick={() => setShowRejectModal(false)}
-                             className="flex-1 px-6 py-4 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 border border-zinc-800 rounded-xl font-bold transition-all"
+                             className="flex-1 px-4 py-4 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 border border-zinc-800 rounded-2xl font-bold transition-all"
                           >
                              İptal
                           </button>
                           <button 
                              onClick={handleRejectSubmit}
                              disabled={isRejecting || !rejectionReason.trim()}
-                             className="flex-1 px-6 py-4 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold transition-all shadow-lg shadow-red-900/20 disabled:opacity-50 flex items-center justify-center gap-2"
+                             className="flex-1 px-4 py-4 bg-red-600 hover:bg-red-500 text-white rounded-2xl font-bold transition-all shadow-lg shadow-red-900/30 disabled:opacity-50 flex items-center justify-center gap-2"
                           >
                              {isRejecting ? <Loader2 className="w-5 h-5 animate-spin" /> : <><ShieldCheck className="w-5 h-5" /> Reddi Onayla</>}
                           </button>
@@ -1456,31 +1471,31 @@ const AdminDashboard: React.FC = () => {
 
       {lightboxMedia && (
         <div 
-            className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 md:p-10 animate-in fade-in duration-300"
+            className="fixed inset-0 z-[110] bg-black/98 backdrop-blur-2xl flex items-center justify-center p-4 md:p-10 animate-in fade-in duration-300"
             onClick={() => setLightboxMedia(null)}
         >
            <button 
              onClick={() => setLightboxMedia(null)}
-             className="absolute top-6 right-6 z-50 p-3 bg-zinc-800 hover:bg-zinc-700 text-white hover:text-amber-500 rounded-full border border-white/10 hover:border-amber-500/50 transition-all shadow-xl"
+             className="absolute top-8 right-8 z-[120] p-4 bg-zinc-800/80 hover:bg-zinc-700 text-white hover:text-amber-500 rounded-full border border-white/10 hover:border-amber-500/50 transition-all shadow-2xl active:scale-90"
            >
-              <X className="w-6 h-6" />
+              <X className="w-8 h-8" />
            </button>
            <div 
-             className="relative max-w-full max-h-full"
+             className="relative max-w-full max-h-full flex items-center justify-center"
              onClick={(e) => e.stopPropagation()}
            >
                 {lightboxMedia.type === 'image' ? (
                         <img 
                             src={lightboxMedia.url} 
                             alt="Full View" 
-                            className="max-w-full max-h-[85vh] rounded-xl shadow-2xl ring-1 ring-white/10 object-contain" 
+                            className="max-w-full max-h-[85vh] rounded-2xl shadow-[0_0_80px_rgba(0,0,0,0.9)] ring-1 ring-white/10 object-contain" 
                         />
                 ) : (
                         <video 
                             src={lightboxMedia.url} 
                             controls
                             autoPlay
-                            className="max-w-full max-h-[85vh] rounded-xl shadow-2xl ring-1 ring-white/10 object-contain" 
+                            className="max-w-full max-h-[85vh] rounded-2xl shadow-2xl ring-1 ring-white/10" 
                         />
                 )}
            </div>
