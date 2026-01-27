@@ -256,15 +256,20 @@ const CustomerDashboard: React.FC = () => {
           <div className="bg-zinc-950 border-t md:border border-white/10 w-full max-w-5xl h-[92vh] md:h-auto md:max-h-[90vh] md:rounded-3xl shadow-2xl relative flex flex-col overflow-hidden animate-in slide-in-from-bottom md:zoom-in-95 duration-200">
             {/* STICKY HEADER FOR CLOSE BUTTON */}
             <div className="sticky top-0 z-30 p-5 md:p-6 border-b border-white/10 flex items-center justify-between bg-zinc-900/90 backdrop-blur-md">
-              <div className="min-w-0 pr-4">
-                <h3 className="text-lg md:text-xl font-serif font-bold text-zinc-100 truncate mb-1 leading-tight">
-                   {selectedRequest.brand} {selectedRequest.model}
-                </h3>
-                <StatusBadge status={selectedRequest.status} />
+              <div className="min-w-0 pr-4 flex-1">
+                <div className="flex flex-wrap items-center gap-3 mb-1">
+                  <h3 className="text-lg md:text-xl font-serif font-bold text-zinc-100 truncate leading-tight">
+                    {selectedRequest.brand} {selectedRequest.model}
+                  </h3>
+                  <div className="shrink-0">
+                    <StatusBadge status={selectedRequest.status} />
+                  </div>
+                </div>
+                <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Müşteri Talebi Detayı</p>
               </div>
               <button 
                 onClick={handleCloseDetail} 
-                className="shrink-0 p-3 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-zinc-100 border border-white/10 shadow-lg active:scale-90 transition-all"
+                className="shrink-0 p-3 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-zinc-100 border border-white/10 shadow-lg active:scale-90 transition-all ml-2"
                 aria-label="Kapat"
               >
                 <X className="w-6 h-6" />

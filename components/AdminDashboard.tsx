@@ -1231,11 +1231,15 @@ const AdminDashboard: React.FC = () => {
           <div className="bg-zinc-950 border-t md:border border-white/10 w-full max-w-6xl h-[92vh] md:h-auto md:max-h-[95vh] md:rounded-3xl shadow-2xl relative flex flex-col overflow-hidden animate-in slide-in-from-bottom md:zoom-in-95 duration-200">
             {/* STICKY HEADER FOR CLOSE BUTTON */}
             <div className="sticky top-0 z-30 p-5 md:p-8 border-b border-white/10 flex items-center justify-between bg-zinc-900/90 backdrop-blur-md">
-              <div className="min-w-0 pr-4">
-                <h3 className="text-xl md:text-2xl font-serif font-bold text-zinc-100 mb-2 flex items-center gap-3 truncate">
-                   {selectedRequest.full_name}
-                   <StatusBadge status={selectedRequest.status} large />
-                </h3>
+              <div className="min-w-0 pr-4 flex-1">
+                <div className="flex flex-wrap items-center gap-3 mb-2">
+                  <h3 className="text-lg md:text-2xl font-serif font-bold text-zinc-100 truncate">
+                     {selectedRequest.full_name}
+                  </h3>
+                  <div className="shrink-0">
+                    <StatusBadge status={selectedRequest.status} large />
+                  </div>
+                </div>
                 <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-400">
                    <span className="flex items-center gap-2 bg-zinc-950/50 border border-white/5 px-3 py-1.5 rounded-lg"><Mail className="w-3.5 h-3.5"/> {selectedRequest.email}</span>
                    <span className="flex items-center gap-2 bg-zinc-950/50 border border-white/5 px-3 py-1.5 rounded-lg"><Phone className="w-3.5 h-3.5"/> {selectedRequest.phone}</span>
@@ -1243,7 +1247,7 @@ const AdminDashboard: React.FC = () => {
               </div>
               <button 
                 onClick={handleCloseDetail} 
-                className="shrink-0 p-3 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-zinc-100 border border-white/10 shadow-lg active:scale-90 transition-all"
+                className="shrink-0 p-3 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-zinc-100 border border-white/10 shadow-lg active:scale-90 transition-all ml-2"
                 aria-label="Kapat"
               >
                 <X className="w-6 h-6" />
