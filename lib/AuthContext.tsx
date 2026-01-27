@@ -2,9 +2,8 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from './supabase';
 import { Session } from '@supabase/supabase-js';
 import { Profile } from '../types';
-import toast from 'react-hot-toast';
 
-const INITIAL_LOAD_TIMEOUT = 4000; // Force render after 4 seconds regardless of profile status
+const INITIAL_LOAD_TIMEOUT = 5000; // Final safety timeout
 
 interface AuthContextType {
   session: Session | null;
@@ -23,14 +22,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const fetchOrCreateProfile = async (currentSession: Session) => {
     try {
-      // Use a timeout for the profile fetch specifically to avoid hanging the entire context
-      const fetchPromise = supabase
+      const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', currentSession.user.id)
         .maybeSingle();
-
-      const { data, error } = await fetchPromise;
 
       if (error) {
         console.error("Profile Fetch Error:", error);
@@ -67,7 +63,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     let mounted = true;
 
-    // Safety timeout to ensure the app ALWAYS boots
+    // Safety timeout to ensure the app ALWAYS boots even if Supabase is slow
     const bootTimer = setTimeout(() => {
       if (mounted && loading) {
         console.warn("Auth initialization safety timeout triggered.");
@@ -109,7 +105,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
       if (!mounted) return;
       
-      if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+      // Fix: Removed 'USER_DELETED' as it is not a valid Supabase AuthChangeEvent. 
+      // Cast 'event' to string to avoid type overlap errors with 'SIGNED_OUT' if it is missing from the union type.
+      if ((event as string) === 'SIGNED_OUT') {
         setSession(null);
         setProfile(null);
         setLoading(false);

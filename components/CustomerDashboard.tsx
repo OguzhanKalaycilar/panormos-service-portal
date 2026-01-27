@@ -2,34 +2,26 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { ServiceRequest, ServiceNote } from '../types';
 import { useAuth } from '../lib/AuthContext';
-import { Plus, Clock, CheckCircle, Calendar, AlertCircle, X, Shield, AlertTriangle, ChevronRight, History, Play, RefreshCw, Loader2, WifiOff, ShieldCheck, Database, XCircle, Maximize2 } from 'lucide-react';
-import AnchorLogo from './AnchorLogo';
+import { Plus, Clock, CheckCircle, Calendar, AlertCircle, X, Shield, AlertTriangle, ChevronRight, History, Play, RefreshCw, Loader2, WifiOff, XCircle, Maximize2 } from 'lucide-react';
 
 const DATA_FETCH_TIMEOUT = 7000;
 
 const CustomerDashboard: React.FC = () => {
   const { session, profile, loading: authLoading } = useAuth();
-  
-  // Mounted Ref for safety
   const isMounted = useRef(true);
 
   // Data State
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
-  
-  // UI States
   const [loadingData, setLoadingData] = useState(false); 
   const [isRefreshing, setIsRefreshing] = useState(false); 
   const [fetchError, setFetchError] = useState<string | null>(null);
   
   // Modals
   const [showPolicy, setShowPolicy] = useState(false);
-  
-  // Detail Modal State
   const [selectedRequest, setSelectedRequest] = useState<ServiceRequest | null>(null);
   const [notes, setNotes] = useState<ServiceNote[]>([]);
   const [lightboxMedia, setLightboxMedia] = useState<{url: string, type: 'image' | 'video'} | null>(null);
 
-  // --- ADMIN REDIRECT GUARD ---
   useEffect(() => {
     if (profile?.role === 'admin') {
         window.location.hash = '#/admin-dashboard';
@@ -78,7 +70,6 @@ const CustomerDashboard: React.FC = () => {
          setLoadingData(false);
          setIsRefreshing(false);
       }
-
     } catch (error: any) {
       clearTimeout(fetchTimeout);
       if (error.name === 'AbortError') return;
@@ -160,7 +151,6 @@ const CustomerDashboard: React.FC = () => {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 md:py-12 relative">
-      
       <div className="flex flex-col md:flex-row items-center justify-between mb-8 md:mb-12 gap-6">
         <div className="text-center md:text-left">
            <h2 className="text-2xl md:text-3xl font-serif font-bold text-zinc-100 mb-2 tracking-tight">Merhaba, {profile?.full_name?.split(' ')[0] || 'Müşterimiz'}</h2>
@@ -207,7 +197,7 @@ const CustomerDashboard: React.FC = () => {
            </button>
         </div>
         
-        {fetchError && (
+        {fetchError ? (
            <div className="glass-panel p-8 rounded-2xl flex flex-col items-center justify-center text-center bg-red-900/5 border-red-500/10">
               <WifiOff className="w-10 h-10 text-red-500 mb-3 opacity-50" />
               <p className="text-zinc-400 text-sm mb-6">{fetchError}</p>
@@ -258,7 +248,6 @@ const CustomerDashboard: React.FC = () => {
         )}
       </div>
 
-      {/* Detail Modal with Mobile Image Fix */}
       {selectedRequest && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-4">
           <div className="absolute inset-0 bg-black/90 backdrop-blur-sm" onClick={handleCloseDetail}></div>
@@ -277,7 +266,6 @@ const CustomerDashboard: React.FC = () => {
             
             <div className="flex-1 overflow-y-auto p-4 md:p-6">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
-                    {/* Timeline */}
                     <div className="glass-panel rounded-2xl p-5 md:p-6 bg-zinc-900/40">
                         <h4 className="text-[10px] font-bold text-amber-500 uppercase tracking-widest mb-6 flex items-center gap-2 border-b border-white/5 pb-4">
                             <History className="w-3.5 h-3.5"/> Onarım Geçmişi
@@ -301,13 +289,11 @@ const CustomerDashboard: React.FC = () => {
                         </div>
                     </div>
                     
-                    {/* Details and Media */}
                     <div className="space-y-6">
                         <div className="glass-panel p-5 rounded-2xl bg-zinc-900/40">
                             <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">Arıza Açıklaması</h4>
                             <p className="text-zinc-300 text-sm leading-relaxed whitespace-pre-wrap">{selectedRequest.description}</p>
                         </div>
-
                         <div>
                             <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-4">Medya Kanıtlar</h4>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -338,7 +324,6 @@ const CustomerDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Lightbox with Object-Contain to fix "Image Loss" */}
       {lightboxMedia && (
         <div 
             className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-md flex items-center justify-center p-4"
@@ -365,35 +350,6 @@ const CustomerDashboard: React.FC = () => {
            </div>
         </div>
       )}
-
-      {/* Procedural Modal */}
-      {showPolicy && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-             <div className="absolute inset-0 bg-black/90 backdrop-blur-sm" onClick={() => setShowPolicy(false)}></div>
-             <div className="relative bg-zinc-950 border border-zinc-800 rounded-3xl w-full max-w-xl shadow-2xl p-6 md:p-8 animate-in zoom-in-95 duration-200">
-                 <h3 className="text-xl font-bold text-zinc-100 mb-6 flex items-center gap-2">
-                    <Shield className="w-5 h-5 text-amber-500" /> Servis Prosedürleri
-                 </h3>
-                 <div className="space-y-6 text-sm text-zinc-400 leading-relaxed overflow-y-auto max-h-[60vh] pr-2 custom-scrollbar">
-                     <div className="bg-amber-500/5 p-4 rounded-xl border border-amber-500/10">
-                         <h4 className="text-zinc-200 font-bold mb-2">Garanti Kapsamı</h4>
-                         <p>Üretim kaynaklı motor ve kart arızaları 1 yıl garantimiz altındadır. Fiziksel darbeler ve sıvı teması garanti dışıdır.</p>
-                     </div>
-                     <div className="bg-red-500/5 p-4 rounded-xl border border-red-500/10">
-                         <h4 className="text-red-400 font-bold mb-2">Dikkat: Mürekkep Teması</h4>
-                         <p>Cihaz içerisine mürekkep kaçması durumunda motorun kilitlenmesi kullanıcı hatası sayılmakta olup ücretli onarım prosedürü uygulanır.</p>
-                     </div>
-                 </div>
-                 <button 
-                    onClick={() => setShowPolicy(false)}
-                    className="w-full mt-8 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold py-3 rounded-xl transition-all"
-                 >
-                     Anladım
-                 </button>
-             </div>
-          </div>
-      )}
-
     </div>
   );
 };
