@@ -4,7 +4,7 @@ import { Session } from '@supabase/supabase-js';
 import { Profile } from '../types';
 import toast from 'react-hot-toast';
 
-const MAX_AUTH_LOADING_TIME = 5000; // Reduced to 5s for better UX
+const INITIAL_LOAD_TIMEOUT = 4000; // Force render after 4 seconds regardless of profile status
 
 interface AuthContextType {
   session: Session | null;
@@ -23,54 +23,57 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const fetchOrCreateProfile = async (currentSession: Session) => {
     try {
-        const { data, error } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', currentSession.user.id)
-            .maybeSingle();
+      // Use a timeout for the profile fetch specifically to avoid hanging the entire context
+      const fetchPromise = supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', currentSession.user.id)
+        .maybeSingle();
 
-        if (error) {
-            console.error("Profile Fetch Error:", error);
-            return null; 
-        }
+      const { data, error } = await fetchPromise;
 
-        if (!data) {
-            const { data: newProfile, error: createError } = await supabase
-                .from('profiles')
-                .insert({
-                    id: currentSession.user.id,
-                    email: currentSession.user.email,
-                    full_name: currentSession.user.user_metadata?.full_name || 'Kullanıcı',
-                    role: 'customer',
-                    phone: currentSession.user.user_metadata?.phone || '',
-                })
-                .select()
-                .single();
-            
-            if (createError) {
-                console.error("Auto-create failed:", createError);
-                return null;
-            }
-            return newProfile as Profile;
-        }
-
-        return data as Profile;
-    } catch (err) {
-        console.error("Unexpected Profile Exception:", err);
+      if (error) {
+        console.error("Profile Fetch Error:", error);
         return null;
+      }
+
+      if (!data) {
+        const { data: newProfile, error: createError } = await supabase
+          .from('profiles')
+          .insert({
+            id: currentSession.user.id,
+            email: currentSession.user.email,
+            full_name: currentSession.user.user_metadata?.full_name || 'Kullanıcı',
+            role: 'customer',
+            phone: currentSession.user.user_metadata?.phone || '',
+          })
+          .select()
+          .single();
+
+        if (createError) {
+          console.error("Auto-create profile failed:", createError);
+          return null;
+        }
+        return newProfile as Profile;
+      }
+
+      return data as Profile;
+    } catch (err) {
+      console.error("Unexpected Profile Exception:", err);
+      return null;
     }
   };
 
   useEffect(() => {
     let mounted = true;
 
-    // Safety timeout to prevent infinite splash screen
-    const safetyTimeout = setTimeout(() => {
+    // Safety timeout to ensure the app ALWAYS boots
+    const bootTimer = setTimeout(() => {
       if (mounted && loading) {
-        console.warn(`Auth loading timed out at ${MAX_AUTH_LOADING_TIME}ms. Forcing UI render.`);
+        console.warn("Auth initialization safety timeout triggered.");
         setLoading(false);
       }
-    }, MAX_AUTH_LOADING_TIME);
+    }, INITIAL_LOAD_TIMEOUT);
 
     const initializeAuth = async () => {
       try {
@@ -78,19 +81,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         if (mounted) {
           setSession(initialSession);
-          // Finish main app loading immediately after session is known
-          setLoading(false);
-          clearTimeout(safetyTimeout);
-
-          // Fetch profile in background
+          
           if (initialSession) {
+            // Fetch profile but don't let it block the main 'loading' state if it takes too long
             const userProfile = await fetchOrCreateProfile(initialSession);
-            if (mounted) setProfile(userProfile);
+            if (mounted) {
+              setProfile(userProfile);
+              setLoading(false);
+              clearTimeout(bootTimer);
+            }
+          } else {
+            setLoading(false);
+            clearTimeout(bootTimer);
           }
         }
       } catch (error: any) {
         console.error("Auth Initialization Error:", error);
-        if (mounted) setLoading(false);
+        if (mounted) {
+          setLoading(false);
+          clearTimeout(bootTimer);
+        }
       }
     };
 
@@ -99,8 +109,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
       if (!mounted) return;
       
-      console.log("Supabase Auth Event:", event);
-
       if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
         setSession(null);
         setProfile(null);
@@ -110,15 +118,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (newSession) {
         setSession(newSession);
-        // Background sync
-        const userProfile = await fetchOrCreateProfile(newSession);
-        if (mounted) setProfile(userProfile);
+        // Silently update profile in background on auth changes
+        fetchOrCreateProfile(newSession).then(p => {
+          if (mounted) setProfile(p);
+        });
       }
     });
 
     return () => {
       mounted = false;
-      clearTimeout(safetyTimeout);
+      clearTimeout(bootTimer);
       subscription.unsubscribe();
     };
   }, []);
@@ -126,17 +135,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signOut = async () => {
     setLoading(true);
     try {
-        await supabase.auth.signOut();
-        localStorage.clear(); 
-        sessionStorage.clear();
+      await supabase.auth.signOut();
+      localStorage.clear();
+      sessionStorage.clear();
     } catch (e) {
-        console.error("Signout error", e);
+      console.error("Signout error", e);
     } finally {
-        setProfile(null);
-        setSession(null);
-        setLoading(false);
-        window.location.hash = '#/login';
-        toast.success('Oturum sonlandırıldı.');
+      setProfile(null);
+      setSession(null);
+      setLoading(false);
+      window.location.hash = '#/login';
     }
   };
 

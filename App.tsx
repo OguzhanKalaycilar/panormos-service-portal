@@ -5,7 +5,7 @@ import AdminDashboard from './components/AdminDashboard';
 import AuthPage from './components/AuthPage';
 import CustomerDashboard from './components/CustomerDashboard';
 import { AuthProvider, useAuth } from './lib/AuthContext';
-import { Loader2, RefreshCw, LogOut, AlertTriangle, LogOut as LogOutIcon } from 'lucide-react';
+import { Loader2, RefreshCw, LogOut, AlertTriangle, LogOut as LogOutIcon, Play } from 'lucide-react';
 import AnchorLogo from './components/AnchorLogo';
 import { supabase } from './lib/supabase';
 import toast from 'react-hot-toast';
@@ -59,15 +59,15 @@ class GlobalErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBound
            </div>
            <h2 className="text-2xl font-serif font-bold text-zinc-100 mb-2">Uygulama Hatası</h2>
            <p className="text-zinc-500 text-sm max-w-md mb-8">
-             Bir şeyler ters gitti. Lütfen uygulamayı sıfırlamayı deneyin.
+             Uygulama başlatılırken bir sorun oluştu. Lütfen tüm verileri temizleyip yeniden deneyin.
            </p>
            
            <div className="flex flex-col gap-3 w-full max-w-xs">
                <button 
                  onClick={this.handleForceReset}
-                 className="w-full bg-gradient-to-r from-red-600 to-red-800 hover:from-red-500 hover:to-red-700 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2"
+                 className="w-full bg-gradient-to-r from-red-600 to-red-800 hover:from-red-500 hover:to-red-700 text-white font-bold py-4 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2"
                >
-                 <RefreshCw className="w-4 h-4" /> Uygulamayı Sıfırla ve Yeniden Başlat
+                 <RefreshCw className="w-4 h-4" /> Uygulamayı Sıfırla
                </button>
            </div>
         </div>
@@ -78,80 +78,76 @@ class GlobalErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBound
   }
 }
 
-// Premium Splash Screen Component with Emergency Exit
 const SplashScreen = () => {
     const [seconds, setSeconds] = useState(0);
-    const [isTimingOut, setIsTimingOut] = useState(false);
+    const { signOut } = useAuth();
 
     useEffect(() => {
         const interval = setInterval(() => {
             setSeconds(prev => prev + 1);
         }, 1000);
-
         return () => clearInterval(interval);
     }, []);
 
-    useEffect(() => {
-        if (seconds >= 10 && !isTimingOut) {
-            setIsTimingOut(true);
-            handleAutoLogout();
-        }
-    }, [seconds, isTimingOut]);
-
-    const handleAutoLogout = async () => {
-        try {
-            console.warn("Session stuck. Performing auto-logout.");
-            await supabase.auth.signOut();
-            localStorage.clear();
-            toast.error("Oturumunuz zaman aşımına uğradı. Lütfen tekrar giriş yapın.", { id: 'auth-timeout' });
-        } catch (e) {
-            console.error("Auto logout failed", e);
-        }
-    };
-
-    const handleHardReset = async () => {
-        localStorage.clear();
-        sessionStorage.clear();
-        await supabase.auth.signOut();
-        window.location.hash = '#/login';
+    const handleForceSkip = () => {
+        // This forces a state change that usually triggers the AuthContext timeout logic indirectly
         window.location.reload();
     };
 
+    const isTimingOut = seconds >= 10;
+
     return (
         <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950">
-            <div className="flex flex-col items-center animate-in fade-in zoom-in duration-500">
+            <div className="flex flex-col items-center animate-in fade-in zoom-in duration-500 px-6 text-center">
                 <div className="relative mb-8">
-                    <div className="absolute inset-0 bg-amber-500/10 blur-2xl rounded-full animate-pulse"></div>
-                    <div className="relative p-6 bg-gradient-to-br from-zinc-800 to-black rounded-3xl border border-white/10 shadow-2xl">
+                    <div className="absolute inset-0 bg-amber-500/10 blur-3xl rounded-full animate-pulse"></div>
+                    <div className="relative p-6 bg-gradient-to-br from-zinc-800 to-black rounded-3xl border border-white/10 shadow-2xl shadow-black">
                         <AnchorLogo className="w-20 h-20" large={true} />
                     </div>
                 </div>
-                <h1 className="font-serif text-3xl md:text-4xl font-bold tracking-wider text-zinc-100 mb-3 text-center">
+                
+                <h1 className="font-serif text-3xl md:text-4xl font-bold tracking-wider text-zinc-100 mb-3">
                     PANORMOS <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-yellow-600">TATTOO</span>
                 </h1>
                 <p className="text-xs text-zinc-500 tracking-[0.3em] mb-12">TECHNICAL SERVICE PORTAL</p>
                 
                 {!isTimingOut ? (
-                    <div className="flex flex-col items-center gap-4">
-                        <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
-                        <p className="text-zinc-600 text-[10px] uppercase tracking-widest animate-pulse">Bağlantı bekleniyor...</p>
+                    <div className="flex flex-col items-center gap-6">
+                        <div className="flex flex-col items-center gap-4">
+                            <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
+                            <p className="text-zinc-600 text-[10px] uppercase tracking-widest animate-pulse">Sunucuya bağlanılıyor...</p>
+                        </div>
+                        
+                        {seconds >= 3 && (
+                            <button 
+                                onClick={handleForceSkip}
+                                className="flex items-center gap-2 px-6 py-2 bg-zinc-900 border border-white/5 text-zinc-400 hover:text-amber-500 rounded-lg text-xs font-bold transition-all animate-in fade-in slide-in-from-bottom-2"
+                            >
+                                <Play className="w-3 h-3" /> Hemen Başlat
+                            </button>
+                        )}
                     </div>
                 ) : (
                     <div className="flex flex-col items-center gap-2 animate-in slide-in-from-bottom-2">
-                        <AlertTriangle className="w-8 h-8 text-red-500 mb-2" />
-                        <p className="text-zinc-400 text-sm text-center mb-6">Sunucu bağlantısı sağlanamadı.</p>
-                    </div>
-                )}
-
-                {seconds >= 5 && (
-                    <div className="mt-8 animate-in fade-in slide-in-from-bottom-4 duration-700 flex flex-col items-center gap-3">
-                        <button 
-                            onClick={handleHardReset}
-                            className="flex items-center gap-3 px-8 py-4 bg-red-900/10 border border-red-500/30 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all text-sm font-bold shadow-xl shadow-red-900/10"
-                        >
-                            <LogOutIcon className="w-4 h-4" /> Oturumu Sıfırla ve Çıkış Yap
-                        </button>
-                        <p className="text-[10px] text-zinc-600 font-medium text-center">Yükleme çok uzun sürdüyse buradan oturumu kapatabilirsiniz.</p>
+                        <AlertTriangle className="w-10 h-10 text-red-500 mb-4" />
+                        <p className="text-zinc-300 font-bold mb-2">Bağlantı Gecikti</p>
+                        <p className="text-zinc-500 text-sm text-center mb-8 max-w-xs">İnternet bağlantınızı kontrol edin veya oturumu sıfırlayarak tekrar deneyin.</p>
+                        
+                        <div className="flex flex-col gap-3 w-full max-w-xs">
+                            <button 
+                                onClick={() => window.location.reload()}
+                                className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-100 font-bold py-4 rounded-xl transition-all border border-white/10 shadow-xl flex items-center justify-center gap-2"
+                            >
+                                <RefreshCw className="w-4 h-4" /> Tekrar Dene
+                            </button>
+                            
+                            <button 
+                                onClick={signOut}
+                                className="w-full bg-red-900/10 border border-red-500/30 text-red-500 hover:bg-red-500 hover:text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2"
+                            >
+                                <LogOutIcon className="w-4 h-4" /> Oturumu Sıfırla ve Çıkış Yap
+                            </button>
+                        </div>
                     </div>
                 )}
             </div>
