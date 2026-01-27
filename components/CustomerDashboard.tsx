@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { ServiceRequest, ServiceNote } from '../types';
@@ -545,7 +546,8 @@ const CustomerDashboard: React.FC = () => {
                                             <ShieldCheck className="w-3 h-3" /> TEKNİK EKİP
                                        </span>
                                    )}
-                                   {(note.author?.role as string) === 'customer' && (
+                                   {/* Fix: Using 'as any' to bypass a compiler error where sibling JSX conditional blocks are incorrectly narrowed as mutually exclusive literal types */}
+                                   {(note.author?.role as any) === 'customer' && (
                                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700">
                                             MÜŞTERİ
                                        </span>

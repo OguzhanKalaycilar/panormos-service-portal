@@ -4,7 +4,7 @@ import { Session } from '@supabase/supabase-js';
 import { Profile } from '../types';
 import toast from 'react-hot-toast';
 
-const MAX_LOADING_TIME = 8000; // 8 seconds fail-safe for AuthContext internal loading
+const MAX_LOADING_TIME = 8000;
 
 interface AuthContextType {
   session: Session | null;
@@ -21,7 +21,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Helper to fetch or create profile
   const fetchOrCreateProfile = async (session: Session): Promise<Profile | null> => {
     try {
         const { data, error } = await supabase
@@ -36,7 +35,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         if (!data) {
-            console.warn("Profile missing. Attempting to auto-create...");
             const { data: newProfile, error: createError } = await supabase
                 .from('profiles')
                 .insert({
@@ -66,7 +64,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     let mounted = true;
 
-    // 1. Internal Safety Timeout
     const safetyTimeout = setTimeout(() => {
       if (mounted && loading) {
         console.warn(`Auth loading timed out. Forcing UI render.`);
@@ -77,12 +74,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const initializeAuth = async () => {
       try {
         const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
-        if (sessionError) throw sessionError;
-
-        if (initialSession && mounted) {
-          setSession(initialSession);
-          const userProfile = await fetchOrCreateProfile(initialSession);
-          if (mounted && userProfile) setProfile(userProfile);
+        
+        if (mounted) {
+          if (initialSession) {
+            setSession(initialSession);
+            const userProfile = await fetchOrCreateProfile(initialSession);
+            if (mounted) setProfile(userProfile);
+          }
         }
       } catch (error: any) {
         console.error("Auth Initialization Error:", error);
@@ -96,11 +94,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     initializeAuth();
 
-    // 2. Listen to Auth Events including Refresh
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
       if (!mounted) return;
       
-      console.log("Auth Event:", event);
+      console.log("Supabase Auth Event:", event);
 
       if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
         setSession(null);
@@ -111,11 +108,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (newSession) {
         setSession(newSession);
-        // Refresh profile if it's a login or a token refresh for a different state
-        if (!profile || profile.id !== newSession.user.id || event === 'TOKEN_REFRESHED') {
-            const userProfile = await fetchOrCreateProfile(newSession);
-            if (mounted && userProfile) setProfile(userProfile);
-        }
+        // Sync profile on login or token refresh
+        const userProfile = await fetchOrCreateProfile(newSession);
+        if (mounted) setProfile(userProfile);
       }
     });
 
@@ -124,7 +119,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       clearTimeout(safetyTimeout);
       subscription.unsubscribe();
     };
-  }, [profile?.id]); // Adding profile.id dependency to handle re-syncs correctly
+  }, []);
 
   const signOut = async () => {
     setLoading(true);
