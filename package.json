@@ -1,0 +1,29 @@
+{
+  "name": "panormos-tattoo-service",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-hot-toast": "^2.6.0",
+    "@hookform/resolvers": "^5.2.2",
+    "@supabase/supabase-js": "^2.93.1",
+    "@emailjs/browser": "^4.3.0",
+    "zod": "^4.3.6",
+    "react-hook-form": "^7.71.1",
+    "lucide-react": "^0.563.0",
+    "xlsx": "0.18.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}
