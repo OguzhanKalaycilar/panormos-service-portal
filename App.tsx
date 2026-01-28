@@ -1,4 +1,4 @@
-import React, { useState, useEffect, ErrorInfo } from 'react';
+import React, { useState, useEffect, ErrorInfo, Component } from 'react';
 import Layout from './components/Layout';
 import ServiceForm from './components/ServiceForm';
 import AdminDashboard from './components/AdminDashboard';
@@ -20,7 +20,9 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-class GlobalErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+class GlobalErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  public state: ErrorBoundaryState;
+
   constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = {

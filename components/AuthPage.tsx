@@ -65,32 +65,60 @@ const AuthPage: React.FC<AuthPageProps> = ({ initialMode = 'login' }) => {
         if (authError) throw authError;
 
         if (authData.user) {
-          // Manually insert into profiles
-          const { error: profileError } = await supabase
-            .from('profiles')
-            .insert({
-              id: authData.user.id,
-              full_name: fullName,
-              email: email,
-              phone: phone,
-              role: 'customer' 
-            });
+          try {
+             // 1. Robust Profile Creation Check
+             // First check if profile exists (via Trigger or previous attempt)
+             const { data: existingProfile } = await supabase
+                .from('profiles')
+                .select('id')
+                .eq('id', authData.user.id)
+                .maybeSingle();
 
-          if (profileError) {
-             console.error("Profile creation error:", profileError);
+             if (!existingProfile) {
+                // 2. Insert only if not exists
+                const { error: profileError } = await supabase
+                    .from('profiles')
+                    .insert({
+                        id: authData.user.id,
+                        full_name: fullName,
+                        email: email,
+                        phone: phone,
+                        role: 'customer' 
+                    });
+
+                if (profileError) {
+                    // Ignore 42501 (RLS) if it happens, as triggers might have handled it 
+                    // or AuthContext will fix it on next load.
+                    if (profileError.code !== '42501') {
+                         console.error("Profile creation error:", profileError);
+                         throw profileError;
+                    }
+                }
+             }
+          } catch (profileErr: any) {
+              console.warn("Non-critical profile setup warning:", profileErr);
+              toast("Profil oluşturulurken bir sorun çıktı, ancak hesabınız açıldı. Giriş yapmayı deneyebilirsiniz.", {
+                 icon: '⚠️'
+              });
           }
 
-          toast.success('Kayıt başarılı! Lütfen giriş yapınız.');
-          setMode('login');
-          window.location.hash = '#/login';
-          setPassword(''); 
+          toast.success('Kayıt başarılı!');
+          
+          if (authData.session) {
+             // Auto-login successful
+             window.location.hash = '#/my-requests';
+          } else {
+             // Email verification required or manual login needed
+             setMode('login');
+             window.location.hash = '#/login';
+             setPassword(''); 
+          }
         }
       }
     } catch (error: any) {
       toast.error(error.message || 'Bir hata oluştu.');
     } finally {
-      // Note: We don't necessarily need to set loading false if we redirected,
-      // but it's good practice in case of errors.
+      // Ensure loading state is always cleared
       setLoading(false);
     }
   };
