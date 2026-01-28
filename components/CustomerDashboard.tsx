@@ -2,20 +2,28 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { ServiceRequest, ServiceNote } from '../types';
 import { useAuth } from '../lib/AuthContext';
-import { Plus, Clock, CheckCircle, Calendar, AlertCircle, X, Shield, AlertTriangle, ChevronRight, History, Play, RefreshCw, Loader2, WifiOff, XCircle, Maximize2 } from 'lucide-react';
+import { 
+  Plus, Clock, CheckCircle, Calendar, AlertCircle, X, Shield, AlertTriangle, 
+  ChevronRight, History, Play, RefreshCw, Loader2, WifiOff, XCircle, Maximize2,
+  Wrench, FileText, Truck, PackageCheck, Info
+} from 'lucide-react';
 
 const DATA_FETCH_TIMEOUT = 7000;
 
 const CustomerDashboard: React.FC = () => {
   const { session, profile, loading: authLoading } = useAuth();
   const isMounted = useRef(true);
-
+  
   // Data State
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
   const [loadingData, setLoadingData] = useState(false); 
   const [isRefreshing, setIsRefreshing] = useState(false); 
   const [fetchError, setFetchError] = useState<string | null>(null);
   
+  // Use ref to track requests length to avoid dependency loops in useCallback
+  const requestsRef = useRef<ServiceRequest[]>([]);
+  requestsRef.current = requests;
+
   // Modals
   const [showPolicy, setShowPolicy] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<ServiceRequest | null>(null);
@@ -36,7 +44,8 @@ const CustomerDashboard: React.FC = () => {
   const fetchMyRequests = useCallback(async (forceSilent = false, retryCount = 0) => {
     if (!session?.user?.id) return;
 
-    const hasData = requests.length > 0;
+    // Use ref to check data presence without creating dependency cycle
+    const hasData = requestsRef.current.length > 0;
     const isBackground = hasData || forceSilent;
 
     if (retryCount === 0) {
@@ -49,7 +58,9 @@ const CustomerDashboard: React.FC = () => {
     }
 
     const fetchTimeout = setTimeout(() => {
-        if (isMounted.current && loadingData && !hasData) {
+        // Check loading state safely via check or variable, 
+        // relying on isMounted mostly here.
+        if (isMounted.current && !hasData) {
             setFetchError("Bağlantı yavaş. Lütfen internetinizi kontrol edin.");
             setLoadingData(false);
         }
@@ -87,13 +98,13 @@ const CustomerDashboard: React.FC = () => {
           setIsRefreshing(false);
       }
     }
-  }, [session, requests.length, loadingData]);
+  }, [session]);
 
   useEffect(() => {
     if (!authLoading && session?.user.id) {
       fetchMyRequests(); 
     }
-  }, [session, authLoading, fetchMyRequests]);
+  }, [session, authLoading]); // Removed fetchMyRequests to prevent loop
 
   const handleOpenDetail = (req: ServiceRequest) => {
       setSelectedRequest(req);
@@ -216,8 +227,46 @@ const CustomerDashboard: React.FC = () => {
                 <p className="text-zinc-500 text-xs">Yükleniyor...</p>
             </div>
         ) : requests.length === 0 ? (
-            <div className="glass-panel py-16 rounded-2xl text-center border-dashed">
-                <p className="text-zinc-500 text-sm">Henüz bir talebiniz bulunmuyor.</p>
+            <div className="glass-panel p-8 md:p-12 rounded-3xl text-center border-dashed border-zinc-800 flex flex-col items-center animate-in fade-in duration-500">
+                <div className="w-20 h-20 bg-zinc-900 rounded-full flex items-center justify-center mb-6 border border-zinc-800 shadow-xl relative">
+                     <div className="absolute inset-0 bg-amber-500/10 rounded-full blur-xl animate-pulse"></div>
+                     <Wrench className="w-10 h-10 text-amber-500 relative z-10" />
+                </div>
+                <h3 className="text-2xl font-serif font-bold text-zinc-100 mb-3">Teknik Servis'e Hoşgeldiniz</h3>
+                <p className="text-zinc-500 max-w-md mx-auto mb-10 leading-relaxed text-sm">
+                    Arızalı ekipmanlarınız için hızlıca talep oluşturabilir, onarım durumunu anlık olarak buradan takip edebilirsiniz.
+                </p>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-3xl mb-10">
+                     <div className="bg-zinc-900/50 p-5 rounded-xl border border-white/5 flex flex-col items-center">
+                         <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center mb-3 text-amber-500">
+                             <FileText className="w-5 h-5"/> 
+                         </div>
+                         <div className="font-bold text-zinc-200 mb-1">1. Talep Oluştur</div>
+                         <div className="text-[10px] text-zinc-500 uppercase tracking-wide">Bilgileri Girin</div>
+                     </div>
+                     <div className="bg-zinc-900/50 p-5 rounded-xl border border-white/5 flex flex-col items-center">
+                         <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center mb-3 text-amber-500">
+                             <Truck className="w-5 h-5"/> 
+                         </div>
+                         <div className="font-bold text-zinc-200 mb-1">2. Gönderim</div>
+                         <div className="text-[10px] text-zinc-500 uppercase tracking-wide">Kargolayın</div>
+                     </div>
+                     <div className="bg-zinc-900/50 p-5 rounded-xl border border-white/5 flex flex-col items-center">
+                         <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center mb-3 text-amber-500">
+                             <PackageCheck className="w-5 h-5"/> 
+                         </div>
+                         <div className="font-bold text-zinc-200 mb-1">3. Takip Et</div>
+                         <div className="text-[10px] text-zinc-500 uppercase tracking-wide">Sonucu İzleyin</div>
+                     </div>
+                </div>
+
+                <button 
+                    onClick={() => window.location.hash = '#/new-request'}
+                    className="bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-400 hover:to-yellow-500 text-black font-bold py-4 px-10 rounded-xl transition-all shadow-lg shadow-amber-900/20 hover:-translate-y-1 flex items-center gap-2 text-sm"
+                >
+                    <Plus className="w-5 h-5" /> Hemen Talep Oluştur
+                </button>
             </div>
         ) : (
             <div className="grid grid-cols-1 gap-4">
@@ -334,6 +383,71 @@ const CustomerDashboard: React.FC = () => {
                 <div className="h-10 md:hidden"></div> {/* Extra space for mobile thumb scrolling */}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* --- PROCEDURES MODAL --- */}
+      {showPolicy && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+             <div className="absolute inset-0 bg-black/90 backdrop-blur-sm" onClick={() => setShowPolicy(false)}></div>
+             <div className="relative bg-zinc-950 border border-white/10 w-full max-w-2xl rounded-3xl shadow-2xl p-6 md:p-8 animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+                 <div className="flex items-center justify-between mb-6 border-b border-white/5 pb-4">
+                     <h3 className="text-xl font-serif font-bold text-zinc-100 flex items-center gap-3">
+                        <div className="p-2 bg-amber-500/10 rounded-lg">
+                           <Shield className="w-6 h-6 text-amber-500" /> 
+                        </div>
+                        Servis Prosedürleri
+                     </h3>
+                     <button onClick={() => setShowPolicy(false)} className="p-2 hover:bg-zinc-800 rounded-xl transition-colors text-zinc-400 hover:text-white">
+                         <X className="w-6 h-6" />
+                     </button>
+                 </div>
+                 
+                 <div className="overflow-y-auto pr-2 custom-scrollbar space-y-6">
+                      <div className="space-y-2">
+                          <h4 className="font-bold text-zinc-200 text-sm flex items-center gap-2">
+                             <Wrench className="w-4 h-4 text-amber-500" /> 1. Garanti Kapsamı
+                          </h4>
+                          <p className="text-zinc-400 text-sm leading-relaxed pl-6 border-l border-zinc-800 ml-2">
+                             Ürünlerimiz üretim hatalarına karşı garantilidir. Düşme, darbe, sıvı teması, yanlış voltaj kullanımı ve yetkisiz kişilerce yapılan müdahaleler garanti kapsamı dışındadır.
+                          </p>
+                      </div>
+                      
+                      <div className="space-y-2">
+                          <h4 className="font-bold text-zinc-200 text-sm flex items-center gap-2">
+                             <Truck className="w-4 h-4 text-amber-500" /> 2. Kargo ve Gönderim
+                          </h4>
+                          <p className="text-zinc-400 text-sm leading-relaxed pl-6 border-l border-zinc-800 ml-2">
+                             Cihazınızı servise göndermeden önce <span className="text-amber-500 font-bold">mutlaka temizleyip sterilize ediniz</span>. Biyolojik risk taşıyan kirli cihazlar işlem yapılmadan iade edilecektir. Kargo ücretleri göndericiye aittir.
+                          </p>
+                      </div>
+
+                      <div className="space-y-2">
+                          <h4 className="font-bold text-zinc-200 text-sm flex items-center gap-2">
+                             <Clock className="w-4 h-4 text-amber-500" /> 3. Süreç ve Onay
+                          </h4>
+                          <p className="text-zinc-400 text-sm leading-relaxed pl-6 border-l border-zinc-800 ml-2">
+                             Arıza tespiti yapıldıktan sonra tarafınıza bilgi verilecek ve onayınız alınacaktır. Ortalama servis süresi, parça temin durumuna göre 3-7 iş günüdür.
+                          </p>
+                      </div>
+                      
+                      <div className="bg-amber-500/5 p-4 rounded-xl border border-amber-500/10 mt-4">
+                          <p className="text-xs text-amber-500/80 flex items-start gap-2">
+                             <Info className="w-4 h-4 shrink-0 mt-0.5" />
+                             Servis kaydı oluşturarak yukarıdaki koşulları kabul etmiş sayılırsınız.
+                          </p>
+                      </div>
+                 </div>
+
+                 <div className="mt-6 pt-4 border-t border-white/5 flex justify-end">
+                     <button
+                        onClick={() => setShowPolicy(false)}
+                        className="px-8 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 rounded-xl font-bold transition-all border border-white/5"
+                     >
+                        Anlaşıldı
+                     </button>
+                 </div>
+             </div>
         </div>
       )}
 

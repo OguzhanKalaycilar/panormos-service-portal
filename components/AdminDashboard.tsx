@@ -6,7 +6,7 @@ import {
   CheckCircle, Clock, History, Play, Maximize2, ChevronRight,
   Send, Tag, Users, User, LayoutList, Paperclip, Image as ImageIcon, Loader2,
   AlertTriangle, Archive, WifiOff, ShieldCheck, FileSpreadsheet, Package,
-  Trash2, Edit, Save, Plus, PenTool, Hammer, Box, Activity, Filter, Eye, XCircle
+  Trash2, Box, Activity, Filter, XCircle, Plus
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../lib/AuthContext';
@@ -34,6 +34,14 @@ const AdminDashboard: React.FC = () => {
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
   const [profiles, setProfiles] = useState<ProfileWithStats[]>([]);
   const [stockItems, setStockItems] = useState<BrokenStockItem[]>([]);
+  
+  // Refs for loop prevention (Track data without triggering re-renders/effect loops)
+  const requestsRef = useRef<ServiceRequest[]>([]);
+  requestsRef.current = requests;
+  const profilesRef = useRef<ProfileWithStats[]>([]);
+  profilesRef.current = profiles;
+  const stockRef = useRef<BrokenStockItem[]>([]);
+  stockRef.current = stockItems;
   
   // Loading & Error States
   const [isLoadingData, setIsLoadingData] = useState(true); 
@@ -107,45 +115,14 @@ const AdminDashboard: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [lightboxMedia, selectedStock, selectedRequest, showDeleteConfirm, showRejectModal]);
 
-  // --- WINDOW FOCUS & VISIBILITY HANDLER ---
-  useEffect(() => {
-    const handleRevalidation = () => {
-      if (document.visibilityState === 'visible' && profile?.role === 'admin' && isMounted.current) {
-        fetchData(true); // true = silent/background refresh
-      }
-    };
-    window.addEventListener('focus', handleRevalidation);
-    window.addEventListener('visibilitychange', handleRevalidation);
-    return () => {
-      window.removeEventListener('focus', handleRevalidation);
-      window.removeEventListener('visibilitychange', handleRevalidation);
-    };
-  }, [profile, activeTab]);
-
-  useEffect(() => {
-    if (!authLoading && profile?.role === 'admin') {
-      fetchData();
-    }
-  }, [profile, activeTab, authLoading]);
-
-  // Monitor loading time
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout>;
-    if (isLoadingData) {
-        timer = setTimeout(() => setShowSlowLoading(true), 4000);
-    } else {
-        setShowSlowLoading(false);
-    }
-    return () => clearTimeout(timer);
-  }, [isLoadingData]);
-
   const fetchData = useCallback(async (forceSilent = false) => {
     if (!profile) return;
     
+    // Check refs instead of state to avoid dependency loops
     let hasData = false;
-    if (activeTab === 'requests') hasData = requests.length > 0;
-    if (activeTab === 'crm') hasData = profiles.length > 0;
-    if (activeTab === 'stock') hasData = stockItems.length > 0;
+    if (activeTab === 'requests') hasData = requestsRef.current.length > 0;
+    if (activeTab === 'crm') hasData = profilesRef.current.length > 0;
+    if (activeTab === 'stock') hasData = stockRef.current.length > 0;
 
     const isBackground = hasData || forceSilent;
 
@@ -184,7 +161,39 @@ const AdminDashboard: React.FC = () => {
           setIsRefreshing(false);
       }
     }
-  }, [profile, activeTab, requests.length, profiles.length, stockItems.length]);
+  }, [profile, activeTab]); // Dependencies significantly reduced
+
+  // Window Focus/Visibility Revalidation
+  useEffect(() => {
+    const handleRevalidation = () => {
+      if (document.visibilityState === 'visible' && profile?.role === 'admin' && isMounted.current) {
+        fetchData(true); // true = silent/background refresh
+      }
+    };
+    window.addEventListener('focus', handleRevalidation);
+    window.addEventListener('visibilitychange', handleRevalidation);
+    return () => {
+      window.removeEventListener('focus', handleRevalidation);
+      window.removeEventListener('visibilitychange', handleRevalidation);
+    };
+  }, [profile, activeTab, fetchData]);
+
+  useEffect(() => {
+    if (!authLoading && profile?.role === 'admin') {
+      fetchData();
+    }
+  }, [profile, activeTab, authLoading]); // Removed fetchData to prevent infinite loops if it changes
+
+  // Monitor loading time
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    if (isLoadingData) {
+        timer = setTimeout(() => setShowSlowLoading(true), 4000);
+    } else {
+        setShowSlowLoading(false);
+    }
+    return () => clearTimeout(timer);
+  }, [isLoadingData]);
 
   const fetchRequestsSafe = async () => {
     try {

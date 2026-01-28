@@ -34,6 +34,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (!data) {
+        // Attempt to insert profile if missing
         const { data: newProfile, error: createError } = await supabase
           .from('profiles')
           .insert({
@@ -47,6 +48,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .single();
 
         if (createError) {
+          // If RLS blocks insert (42501), assume trigger handled it or it's read-only.
+          // We return null here but don't log as error to avoid noise/panic.
+          if (createError.code === '42501') {
+             console.warn("Profile creation skipped due to RLS (safe if trigger exists).");
+             return null; 
+          }
           console.error("Auto-create profile failed:", createError);
           return null;
         }
@@ -105,8 +112,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
       if (!mounted) return;
       
-      // Fix: Removed 'USER_DELETED' as it is not a valid Supabase AuthChangeEvent. 
-      // Cast 'event' to string to avoid type overlap errors with 'SIGNED_OUT' if it is missing from the union type.
       if ((event as string) === 'SIGNED_OUT') {
         setSession(null);
         setProfile(null);
@@ -118,7 +123,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setSession(newSession);
         // Silently update profile in background on auth changes
         fetchOrCreateProfile(newSession).then(p => {
-          if (mounted) setProfile(p);
+          if (mounted && p) setProfile(p);
         });
       }
     });
