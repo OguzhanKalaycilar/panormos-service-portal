@@ -5,10 +5,9 @@ import AdminDashboard from './components/AdminDashboard';
 import AuthPage from './components/AuthPage';
 import CustomerDashboard from './components/CustomerDashboard';
 import { AuthProvider, useAuth } from './lib/AuthContext';
-import { Loader2, RefreshCw, LogOut, AlertTriangle, LogOut as LogOutIcon, Play } from 'lucide-react';
+import { Loader2, RefreshCw, AlertTriangle, Play } from 'lucide-react';
 import AnchorLogo from './components/AnchorLogo';
 import { supabase } from './lib/supabase';
-import toast from 'react-hot-toast';
 
 // --- GLOBAL ERROR BOUNDARY ---
 interface ErrorBoundaryProps {
@@ -21,8 +20,6 @@ interface ErrorBoundaryState {
 }
 
 class GlobalErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  public state: ErrorBoundaryState;
-
   constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = {
@@ -92,7 +89,6 @@ const SplashScreen = () => {
     }, []);
 
     const handleForceSkip = () => {
-        // This forces a state change that usually triggers the AuthContext timeout logic indirectly
         window.location.reload();
     };
 
@@ -147,7 +143,7 @@ const SplashScreen = () => {
                                 onClick={signOut}
                                 className="w-full bg-red-900/10 border border-red-500/30 text-red-500 hover:bg-red-500 hover:text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2"
                             >
-                                <LogOutIcon className="w-4 h-4" /> Oturumu Sıfırla ve Çıkış Yap
+                                <AlertTriangle className="w-4 h-4" /> Oturumu Sıfırla
                             </button>
                         </div>
                     </div>
