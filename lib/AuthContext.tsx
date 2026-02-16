@@ -4,7 +4,7 @@ import { supabase } from './supabase';
 import { Session } from '@supabase/supabase-js';
 import { Profile } from '../types';
 
-const INITIAL_LOAD_TIMEOUT = 8000; // Increased timeout to accommodate retries
+const INITIAL_LOAD_TIMEOUT = 10000; // Increased to 10s to match splash screen
 
 interface AuthContextType {
   session: Session | null;
@@ -91,11 +91,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     let mounted = true;
+    let timedOut = false;
 
-    // Safety timeout
+    // Safety timeout - Forces Login Screen if stuck
     const bootTimer = setTimeout(() => {
-      if (mounted && loading) {
+      if (mounted) {
         console.warn("Auth initialization safety timeout triggered.");
+        timedOut = true;
+        // CRITICAL FIX: Force reset state to null to ensure we drop to AuthPage (Login)
+        // instead of getting stuck in a loading state or broken dashboard
+        setSession(null);
+        setProfile(null);
         setLoading(false);
       }
     }, INITIAL_LOAD_TIMEOUT);
@@ -107,23 +113,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         if (sessionError) throw sessionError;
 
-        if (mounted) {
-          setSession(initialSession);
-          
+        if (mounted && !timedOut) {
           if (initialSession) {
+            // Only set session if we found one
+            setSession(initialSession);
             const userProfile = await fetchOrCreateProfile(initialSession);
-            if (mounted) {
-              setProfile(userProfile);
+            
+            // Double check mounted and timeout before updating state
+            if (mounted && !timedOut) {
+              if (userProfile) setProfile(userProfile);
               setLoading(false);
             }
           } else {
-            setLoading(false);
+            // No session found, done loading
+            if (mounted && !timedOut) {
+              setLoading(false);
+            }
           }
           clearTimeout(bootTimer);
         }
       } catch (error: any) {
         console.error("Auth Initialization Error:", error);
-        if (mounted) {
+        if (mounted && !timedOut) {
+          // On error, default to logged out state
+          setSession(null);
+          setProfile(null);
           setLoading(false);
           clearTimeout(bootTimer);
         }
@@ -146,8 +160,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setSession(newSession);
         // If profile is already loaded and matches user, don't refetch to avoid flicker
         if (!profile || profile.id !== newSession.user.id) {
-            const p = await fetchOrCreateProfile(newSession);
-            if (mounted && p) setProfile(p);
+            // We don't await here to avoid blocking UI updates, 
+            // but we fetch profile in background
+            fetchOrCreateProfile(newSession).then(p => {
+               if (mounted && p) setProfile(p);
+            });
         }
       }
     });

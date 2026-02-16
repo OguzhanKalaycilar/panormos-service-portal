@@ -9,7 +9,7 @@ import {
   Plus, Clock, CheckCircle, Calendar, AlertCircle, X, Shield, AlertTriangle, 
   ChevronRight, History, Play, Loader2, WifiOff, XCircle, 
   Wrench, FileText, Truck, Info, MessageCircle, Paperclip, Send,
-  ThumbsUp, Image as ImageIcon
+  ThumbsUp, Image as ImageIcon, Zap, Ban
 } from 'lucide-react';
 import { pdf } from '@react-pdf/renderer';
 import ServicePdfDocument from './ServicePdfDocument';
@@ -391,47 +391,73 @@ const CustomerDashboard: React.FC = () => {
       
       {showPolicy && (
           <div className="fixed inset-0 z-[60] bg-black/95 flex items-center justify-center p-4">
-              <div className="bg-zinc-900 border border-white/10 rounded-3xl max-w-lg w-[92%] p-6 relative shadow-2xl">
+              <div className="bg-zinc-900 border border-white/10 rounded-3xl max-w-lg w-[92%] p-6 relative shadow-2xl flex flex-col max-h-[85vh]">
                   <button onClick={() => setShowPolicy(false)} className="absolute top-4 right-4 p-1.5 bg-zinc-800 rounded-full text-zinc-400 hover:text-white transition-colors"><X className="w-4 h-4"/></button>
-                  <h3 className="text-xl font-serif font-bold text-white mb-6 flex items-center gap-3"><Shield className="w-6 h-6 text-amber-500" /> Garanti Şartları</h3>
+                  <h3 className="text-lg font-serif font-bold text-white mb-6 flex items-center gap-3 shrink-0"><Shield className="w-5 h-5 text-amber-500" /> Garanti ve İade Şartları</h3>
                   
-                  <div className="space-y-5 text-zinc-400 text-xs leading-relaxed overflow-y-auto max-h-[60vh] pr-2 custom-scrollbar">
+                  <div className="space-y-5 text-zinc-400 text-xs leading-relaxed overflow-y-auto pr-2 custom-scrollbar flex-1">
                       
+                      {/* Section 1 */}
                       <div className="bg-zinc-950/50 p-4 rounded-xl border border-white/5">
-                          <h4 className="text-zinc-200 font-bold mb-2 flex items-center gap-2">
-                             <Clock className="w-4 h-4 text-amber-500"/> 1. Onarım Süresi
+                          <h4 className="text-zinc-200 font-bold mb-2 flex items-center gap-2 text-[10px] uppercase tracking-widest">
+                             <Info className="w-3.5 h-3.5 text-blue-500"/> Genel Bilgi ve Süre
                           </h4>
-                          <p>Yasal tamir süresi azami <strong>21 iş günüdür</strong>. Arıza tespiti ortalama 1-3 iş günü içinde tamamlanarak tarafınıza bilgi verilir.</p>
-                      </div>
-
-                      <div className="bg-zinc-950/50 p-4 rounded-xl border border-white/5">
-                          <h4 className="text-zinc-200 font-bold mb-2 flex items-center gap-2">
-                             <Truck className="w-4 h-4 text-amber-500"/> 2. Ücretsiz Kargo
-                          </h4>
-                          <p>Teknik servise gönderimler <strong>Yurtiçi Kargo</strong> ile ücretsizdir. Gönderim yaparken Panormos Tattoo <strong>Anlaşma Kodunu</strong> belirtmeniz yeterlidir.</p>
-                      </div>
-
-                      <div className="bg-zinc-950/50 p-4 rounded-xl border border-white/5">
-                          <h4 className="text-zinc-200 font-bold mb-2 flex items-center gap-2">
-                             <Shield className="w-4 h-4 text-amber-500"/> 3. Garanti Kapsamı
-                          </h4>
-                          <ul className="list-disc list-inside space-y-1 ml-1">
-                              <li>Onarım yapılan parçalar <strong>3 Ay</strong> servis garantisi altındadır.</li>
-                              <li>Sıvı teması (Ink Ingress), düşme, darbe ve yetkisiz müdahale garanti dışıdır.</li>
-                              <li>Hijyen kurallarına uygun temizlenmemiş cihazlar işleme alınmayabilir.</li>
+                          <ul className="list-disc list-inside space-y-1 ml-1 marker:text-zinc-600">
+                              <li>Dövme makineleri profesyonel kullanım amaçlı, hijyen ve teknik hassasiyet gerektiren ürünlerdir.</li>
+                              <li>Garanti süresi fatura tarihinden itibaren <strong>1 (bir) yıldır</strong>.</li>
+                              <li>Garanti yalnızca <strong>üretim ve montaj kaynaklı</strong> teknik arızaları kapsar (Motor ve elektronik aksam).</li>
                           </ul>
                       </div>
 
-                      <div className="bg-zinc-950/50 p-4 rounded-xl border border-white/5">
-                          <h4 className="text-zinc-200 font-bold mb-2 flex items-center gap-2">
-                             <AlertCircle className="w-4 h-4 text-amber-500"/> 4. Fiyat Onayı ve İade
+                      {/* Section 2 */}
+                      <div className="bg-red-900/10 p-4 rounded-xl border border-red-500/20">
+                          <h4 className="text-red-400 font-bold mb-2 flex items-center gap-2 text-[10px] uppercase tracking-widest">
+                             <AlertTriangle className="w-3.5 h-3.5"/> Garanti Kapsamı Dışı Durumlar
                           </h4>
-                          <p>Onarım teklifi onaylanmayan veya iade istenen cihazlarda <strong>kargo ücreti müşteriye aittir</strong>. 30 gün içinde teslim alınmayan cihazlardan firmamız sorumlu değildir.</p>
+                          <ul className="list-disc list-inside space-y-1 ml-1 marker:text-red-500/50">
+                              <li>Düşme, darbe ve fiziksel hasarlar.</li>
+                              <li><strong>Sıvı teması</strong> (Mürekkep kaçması / Ink Ingress).</li>
+                              <li>Yanlış adaptör veya voltaj kullanımı.</li>
+                              <li>Yetkisiz müdahale, sökme veya modifikasyon yapılması.</li>
+                          </ul>
+                      </div>
+
+                      {/* Section 3 */}
+                      <div className="bg-zinc-950/50 p-4 rounded-xl border border-white/5">
+                          <h4 className="text-zinc-200 font-bold mb-2 flex items-center gap-2 text-[10px] uppercase tracking-widest">
+                             <Ban className="w-3.5 h-3.5 text-amber-500"/> İade ve Değişim Koşulları
+                          </h4>
+                          <p className="mb-2">Satın alımdan sonra <strong>7-14 iş günü</strong> içerisinde aşağıdaki şartlar sağlanmalıdır:</p>
+                          <ul className="list-disc list-inside space-y-1 ml-1 marker:text-zinc-600">
+                              <li>Ürün hiç kullanılmamış olmalıdır.</li>
+                              <li>Koruyucu jelatinler ve hijyen bantları açılmamış olmalıdır.</li>
+                              <li><strong>Kabul Edilmeyenler:</strong> İğne/kartuş takılmış, mürekkep teması olmuş veya test amacıyla çalıştırılmış ürünler iade alınmaz.</li>
+                          </ul>
+                      </div>
+
+                      {/* Section 4 */}
+                      <div className="bg-zinc-950/50 p-4 rounded-xl border border-white/5">
+                          <h4 className="text-zinc-200 font-bold mb-2 flex items-center gap-2 text-[10px] uppercase tracking-widest">
+                             <ThumbsUp className="w-3.5 h-3.5 text-zinc-500"/> Teknik Arıza Sayılmayanlar
+                          </h4>
+                          <p className="italic opacity-80">"Makine elime uymadı", "Titreşimi fazla/az geldi", "Eskisi gibi çalışmıyor" gibi kişisel tercih ve alışkanlıklara dayalı sebepler arıza veya iade nedeni değildir.</p>
+                      </div>
+
+                       {/* Section 5 */}
+                      <div className="bg-zinc-950/50 p-4 rounded-xl border border-white/5">
+                          <h4 className="text-zinc-200 font-bold mb-2 flex items-center gap-2 text-[10px] uppercase tracking-widest">
+                             <Wrench className="w-3.5 h-3.5 text-green-500"/> Servis Süreci
+                          </h4>
+                          <ul className="list-disc list-inside space-y-1 ml-1 marker:text-zinc-600">
+                              <li>Ürünler fatura ve form ile gönderilmelidir.</li>
+                              <li>İnceleme süresi ortalama <strong>7-14 iş günüdür</strong>.</li>
+                              <li>Kullanıcı hatası tespit edilirse ücretli onarım teklifi sunulur.</li>
+                          </ul>
                       </div>
 
                   </div>
                   
-                  <button onClick={() => setShowPolicy(false)} className="w-full mt-6 bg-zinc-100 hover:bg-white text-black font-bold py-3 rounded-xl transition-colors text-xs uppercase tracking-widest shadow-lg">Okudum, Anladım</button>
+                  <button onClick={() => setShowPolicy(false)} className="w-full mt-6 bg-zinc-100 hover:bg-white text-black font-bold py-3 rounded-xl transition-colors text-xs uppercase tracking-widest shadow-lg shrink-0">Okudum, Anladım</button>
               </div>
           </div>
       )}
