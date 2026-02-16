@@ -1,176 +1,405 @@
 
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { ServiceRequest, ServiceNote, ProfileWithStats, BrokenStockItem } from '../types';
+import { ServiceRequest, ServiceNote, ProfileWithStats, InventoryItem, RequestStatus } from '../types';
 import { 
-  Lock, Search, RefreshCw, X, Calendar, Phone, Mail, 
-  CheckCircle, Clock, History, Play, Maximize2, ChevronRight,
-  Send, Tag, Users, User, LayoutList, Paperclip, Image as ImageIcon, Loader2,
-  AlertTriangle, Archive, WifiOff, ShieldCheck, FileSpreadsheet, Package,
-  Trash2, Box, Activity, Filter, XCircle, Plus, Info, Layers
+  Search, RefreshCw, X, Calendar, Phone, Mail, 
+  CheckCircle, History, Play, ChevronRight,
+  Send, User, Paperclip, Image as ImageIcon, Loader2,
+  AlertTriangle, FileSpreadsheet,
+  XCircle, Info, Layers, MessageCircle,
+  PieChart as PieChartIcon, BarChart2, Wallet, Smartphone,
+  Wrench, Activity, FileText, Trash2, Edit3, Box, Cpu,
+  Plus, Package, TrendingUp, DollarSign, AlertCircle, Archive, Tag
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../lib/AuthContext';
-import AnchorLogo from './AnchorLogo';
 import * as XLSX from 'xlsx';
 import { sendUpdateNotificationEmail } from '../lib/email';
+import { sendNotification } from '../lib/notifications';
+import { 
+  PieChart, Pie, Cell, Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, AreaChart, Area
+} from 'recharts';
+import { pdf } from '@react-pdf/renderer';
+import ServicePdfDocument from './ServicePdfDocument';
 
-type TabType = 'requests' | 'crm' | 'stock';
+// Simple notification sound (Pop sound)
+const NOTIFICATION_SOUND = 'data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU'; 
+
+type TabType = 'requests' | 'crm' | 'stock' | 'reports';
 type RequestFilter = 'pending' | 'resolved' | 'rejected' | 'all';
+
+interface EnrichedProfile extends ProfileWithStats {
+  stats: {
+    pending: number;
+    resolved: number;
+    rejected: number;
+  };
+  display_phone: string;
+  display_email: string;
+  latest_requests: ServiceRequest[];
+}
+
+const STATUS_OPTIONS: { value: RequestStatus; label: string; color: string }[] = [
+    { value: 'pending', label: 'Bekliyor', color: 'text-amber-500 bg-amber-500/10 border-amber-500/20' },
+    { value: 'diagnosing', label: 'İnceleniyor', color: 'text-blue-400 bg-blue-500/10 border-blue-500/20' },
+    { value: 'pending_approval', label: 'Fiyat Onayı', color: 'text-purple-400 bg-purple-500/10 border-purple-500/20' },
+    { value: 'approved', label: 'İşlemde', color: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20' },
+    { value: 'waiting_parts', label: 'Parça Bekleniyor', color: 'text-orange-400 bg-orange-500/10 border-orange-500/20' },
+    { value: 'resolved', label: 'Test Ok', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' },
+    { value: 'shipped', label: 'Kargolandı', color: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20' },
+    { value: 'completed', label: 'Teslim Edildi', color: 'text-zinc-400 bg-zinc-500/10 border-zinc-500/20' },
+    { value: 'rejected', label: 'İptal / Red', color: 'text-red-400 bg-red-500/10 border-red-500/20' },
+];
+
+// INVENTORY STATUS OPTIONS
+const INVENTORY_STATUS_OPTIONS = [
+    { value: 'new', label: 'Sıfır', color: 'bg-green-500/20 text-green-500 border-green-500/30' },
+    { value: 'used', label: 'İkinci El', color: 'bg-amber-500/20 text-amber-500 border-amber-500/30' },
+    { value: 'refurbished', label: 'Yenilenmiş', color: 'bg-blue-500/20 text-blue-500 border-blue-500/30' },
+    { value: 'defective', label: 'Arızalı', color: 'bg-orange-500/20 text-orange-500 border-orange-500/30' },
+    { value: 'scrap', label: 'Hurda', color: 'bg-red-500/20 text-red-500 border-red-500/30' },
+];
 
 const AdminDashboard: React.FC = () => {
   const { profile, session, loading: authLoading } = useAuth();
   const isMounted = useRef(true);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // View State
   const [activeTab, setActiveTab] = useState<TabType>('requests');
   const [requestFilter, setRequestFilter] = useState<RequestFilter>('pending');
   const [searchTerm, setSearchTerm] = useState('');
+  const [activeDetailTab, setActiveDetailTab] = useState<'info' | 'chat'>('info');
   
-  // Data State
+  // Data States
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
-  const [profiles, setProfiles] = useState<ProfileWithStats[]>([]);
-  const [stockItems, setStockItems] = useState<BrokenStockItem[]>([]);
+  const [profiles, setProfiles] = useState<EnrichedProfile[]>([]);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
   
-  // Loading & Error States
+  const [unreadMap, setUnreadMap] = useState<Record<string, boolean>>({});
   const [isLoadingData, setIsLoadingData] = useState(true); 
   const [isRefreshing, setIsRefreshing] = useState(false); 
-
-  // Detail Modal State (Requests)
-  const [selectedRequest, setSelectedRequest] = useState<ServiceRequest | null>(null);
-  const [notes, setNotes] = useState<ServiceNote[]>([]);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   
-  // Reject Request State
+  // Selections
+  const [selectedRequest, setSelectedRequest] = useState<ServiceRequest | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<EnrichedProfile | null>(null);
+
+  // Forms & Modals
+  const [showStockModal, setShowStockModal] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<string | null>(null); // NEW: Track item to delete
+  const [stockForm, setStockForm] = useState<Partial<InventoryItem>>({
+      name: '', category: 'Yedek Parça', sku: '', quantity: 0, critical_level: 5, buy_price: 0, sell_price: 0, shelf_location: '', status: 'new', notes: ''
+  });
+
+  const [notes, setNotes] = useState<ServiceNote[]>([]);
+  const notesRef = useRef<ServiceNote[]>([]); 
+  const selectedRequestRef = useRef<ServiceRequest | null>(null); 
+  
+  const [editForm, setEditForm] = useState<{
+      estimated_cost: number;
+      currency: string;
+      shipping_company: string;
+      shipping_tracking_code: string;
+      status: RequestStatus;
+  }>({ estimated_cost: 0, currency: 'TL', shipping_company: '', shipping_tracking_code: '', status: 'pending' });
+
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
   const [isRejecting, setIsRejecting] = useState(false);
 
-  // Note Form State
   const [newNote, setNewNote] = useState('');
   const [noteFile, setNoteFile] = useState<File | null>(null);
   const [isSendingNote, setIsSendingNote] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  // Lightbox State
+  const notesContainerRef = useRef<HTMLDivElement>(null);
   const [lightboxMedia, setLightboxMedia] = useState<{url: string, type: 'image' | 'video'} | null>(null);
 
-  // Robust Stock Form State
-  const [newStock, setNewStock] = useState<Partial<BrokenStockItem>>({
-      brand: '', 
-      model: '', 
-      quantity: 1, 
-      cosmetic_condition: 'Sıfır Ayarında', 
-      failure_reason: 'Diğer', 
-      missing_parts: '', 
-      notes: '' 
-  });
+
+  useEffect(() => {
+      notesRef.current = notes;
+      selectedRequestRef.current = selectedRequest;
+  }, [notes, selectedRequest]);
+
+  useEffect(() => {
+      audioRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3'); 
+      audioRef.current.volume = 0.5;
+  }, []);
+
+  const playNotificationSound = () => {
+      if (audioRef.current) {
+          audioRef.current.currentTime = 0;
+          audioRef.current.play().catch(e => console.log("Audio play blocked", e));
+      }
+  };
+
+  const handleOpenDetail = useCallback((req: ServiceRequest) => {
+    setActiveTab('requests');
+    setSelectedRequest(req);
+    setEditForm({ estimated_cost: req.estimated_cost || 0, currency: req.currency || 'TL', shipping_company: req.shipping_company || '', shipping_tracking_code: req.shipping_tracking_code || '', status: req.status });
+    setActiveDetailTab('info');
+    fetchNotes(req.id);
+    document.body.style.overflow = 'hidden';
+  }, []);
 
   useEffect(() => {
     isMounted.current = true;
     return () => { isMounted.current = false; };
   }, []);
 
+  // Data Fetching
   const fetchData = useCallback(async (forceSilent = false) => {
     if (!profile) return;
-    
     if (forceSilent) setIsRefreshing(true);
     else setIsLoadingData(true);
-
     try {
-      if (activeTab === 'requests') {
-          const { data, error } = await supabase.from('service_requests').select('*').order('created_at', { ascending: false });
-          if (error) throw error;
-          if (isMounted.current) setRequests(data as ServiceRequest[] || []);
-      } else if (activeTab === 'crm') {
+      // 1. Fetch Requests
+      const { data: reqData, error: reqError } = await supabase.from('service_requests').select('*').order('created_at', { ascending: false });
+      if (reqError) throw reqError;
+      const allRequests = reqData as ServiceRequest[] || [];
+      if (isMounted.current) setRequests(allRequests);
+
+      // 2. Fetch Unread Notes Logic
+      const { data: notesMeta } = await supabase.from('service_notes').select('request_id, author_id').order('created_at', { ascending: true });
+      const map: Record<string, boolean> = {};
+      if (notesMeta) {
+        notesMeta.forEach(n => {
+            if (n.author_id !== session?.user?.id) map[String(n.request_id)] = true;
+        });
+      }
+      if (isMounted.current && !forceSilent) setUnreadMap(map);
+
+      // 3. Tab Specific Data
+      if (activeTab === 'crm') {
           const { data: profilesData, error: pError } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
-          const { data: reqsData } = await supabase.from('service_requests').select('user_id');
           if (pError) throw pError;
           
-          const statsMap: Record<string, number> = {};
-          (reqsData || []).forEach(r => { if(r.user_id) statsMap[r.user_id] = (statsMap[r.user_id] || 0) + 1; });
+          const userMap: Record<string, any> = {};
+          allRequests.forEach(r => {
+             if (!r.user_id) return;
+             if (!userMap[r.user_id]) userMap[r.user_id] = { total: 0, pending: 0, resolved: 0, rejected: 0, last_phone: '', last_email: '', requests: [] };
+             userMap[r.user_id].total++;
+             if (['pending', 'diagnosing', 'pending_approval', 'approved', 'waiting_parts'].includes(r.status)) userMap[r.user_id].pending++;
+             if (['resolved', 'completed', 'shipped'].includes(r.status)) userMap[r.user_id].resolved++;
+             if (r.status === 'rejected') userMap[r.user_id].rejected++;
+             if (!userMap[r.user_id].last_phone && r.phone) userMap[r.user_id].last_phone = r.phone;
+             if (!userMap[r.user_id].last_email && r.email) userMap[r.user_id].last_email = r.email;
+             userMap[r.user_id].requests.push(r);
+          });
 
-          const enriched = (profilesData || []).map(p => ({
-              ...p,
-              full_name: p.full_name || 'İsimsiz',
-              request_count: statsMap[p.id] || 0
-          }));
-          if (isMounted.current) setProfiles(enriched as ProfileWithStats[]);
+          const enriched = (profilesData || []).map(p => {
+              const stats = userMap[p.id] || { total: 0, pending: 0, resolved: 0, rejected: 0, last_phone: '', last_email: '', requests: [] };
+              return { 
+                  ...p, 
+                  full_name: p.full_name || 'İsimsiz', 
+                  request_count: stats.total, 
+                  stats: { pending: stats.pending, resolved: stats.resolved, rejected: stats.rejected }, 
+                  display_phone: p.phone || stats.last_phone || '-', 
+                  display_email: p.email || stats.last_email || '-',
+                  latest_requests: stats.requests
+              };
+          });
+          if (isMounted.current) setProfiles(enriched as EnrichedProfile[]);
+
       } else if (activeTab === 'stock') {
-          const { data, error } = await supabase.from('broken_stock').select('*').order('created_at', { ascending: false });
-          if (error) throw error;
-          if (isMounted.current) setStockItems(data as BrokenStockItem[] || []);
+          const { data: invData, error: invError } = await supabase.from('inventory').select('*').order('created_at', { ascending: false });
+          if (invError) {
+              if (invError.code === '42P01') console.warn("Inventory table missing, please run SQL."); 
+              else throw invError;
+          }
+          if (isMounted.current) setInventory(invData as InventoryItem[] || []);
       }
-    } catch (err: any) {
-      console.error("Fetch error:", err);
-      toast.error("Veriler yüklenemedi.");
-    } finally {
-      if (isMounted.current) {
-          setIsLoadingData(false);
-          setIsRefreshing(false);
-      }
-    }
-  }, [profile, activeTab]);
 
+    } catch (err: any) { 
+        toast.error("Veriler yüklenemedi."); 
+        console.error(err);
+    } finally { 
+        if (isMounted.current) { setIsLoadingData(false); setIsRefreshing(false); } 
+    }
+  }, [profile, activeTab, session?.user?.id]);
+
+  useEffect(() => { if (!authLoading && profile?.role === 'admin') fetchData(); }, [profile, activeTab, authLoading, fetchData]);
+
+  // Realtime Subscriptions
   useEffect(() => {
-    if (!authLoading && profile?.role === 'admin') {
-      fetchData();
-    }
-  }, [profile, activeTab, authLoading, fetchData]);
+    if (!profile?.role || profile.role !== 'admin') return;
+    const channel = supabase.channel('admin-realtime')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'service_notes' }, (payload) => {
+          const newNote = payload.new as ServiceNote;
+          if (selectedRequestRef.current && String(selectedRequestRef.current.id) === String(newNote.request_id)) {
+             supabase.from('profiles').select('full_name, role').eq('id', newNote.author_id).single().then(({data}) => {
+                    const noteWithAuthor = { ...newNote, author: data || { full_name: 'Bilinmeyen', role: 'customer' } };
+                    setNotes(prev => [...prev, noteWithAuthor as ServiceNote]);
+                    if (newNote.author_id !== session?.user?.id) playNotificationSound();
+                });
+          } else {
+             if (newNote.author_id !== session?.user?.id) { 
+                 playNotificationSound(); 
+                 setUnreadMap(prev => ({ ...prev, [String(newNote.request_id)]: true })); 
+                 toast(`Yeni Mesaj: Talep #${String(newNote.request_id).slice(0,6)}...`, { icon: '💬' }); 
+             }
+          }
+        }
+      )
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'service_requests' }, (payload) => {
+           const updatedReq = payload.new as ServiceRequest;
+           setRequests(prev => prev.map(r => r.id === updatedReq.id ? updatedReq : r));
+           if (selectedRequestRef.current && String(selectedRequestRef.current.id) === String(updatedReq.id)) {
+               setSelectedRequest(updatedReq);
+               setEditForm(prev => ({ ...prev, status: updatedReq.status, estimated_cost: updatedReq.estimated_cost || 0 }));
+           }
+        }
+      ).subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [profile?.role, session?.user?.id]);
 
-  const fetchNotes = async (requestId: number) => {
+  // --- REPORT ANALYTICS CALCULATIONS ---
+  const analyticsData = useMemo(() => {
+      // 1. Financials
+      let totalEstimatedRevenue = 0;
+      let realizedRevenue = 0;
+      let totalRequests = requests.length;
+      
+      const monthlyData: Record<string, {name: string, count: number, revenue: number}> = {};
+
+      requests.forEach(req => {
+          const cost = req.estimated_cost || 0;
+          totalEstimatedRevenue += cost;
+          if (['completed', 'shipped', 'resolved'].includes(req.status)) {
+              realizedRevenue += cost;
+          }
+
+          // Monthly Trend
+          const date = new Date(req.created_at);
+          const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+          const monthLabel = date.toLocaleDateString('tr-TR', { month: 'short', year: '2-digit' });
+          
+          if (!monthlyData[monthKey]) monthlyData[monthKey] = { name: monthLabel, count: 0, revenue: 0 };
+          monthlyData[monthKey].count++;
+          if (['completed', 'shipped', 'resolved', 'approved'].includes(req.status)) {
+             monthlyData[monthKey].revenue += cost;
+          }
+      });
+
+      const trendData = Object.values(monthlyData).sort((a,b) => a.name.localeCompare(b.name));
+
+      // 2. Status Distribution
+      const statusCounts = requests.reduce((acc, curr) => {
+          const simplifiedStatus = ['resolved', 'completed', 'shipped'].includes(curr.status) ? 'resolved' : ['rejected'].includes(curr.status) ? 'rejected' : 'pending';
+          acc[simplifiedStatus] = (acc[simplifiedStatus] || 0) + 1;
+          return acc;
+      }, {} as Record<string, number>);
+
+      const statusData = [
+          { name: 'Aktif', value: statusCounts['pending'] || 0, color: '#f59e0b' },
+          { name: 'Tamamlanan', value: statusCounts['resolved'] || 0, color: '#22c55e' },
+          { name: 'İptal', value: statusCounts['rejected'] || 0, color: '#ef4444' },
+      ];
+
+      // 3. Stock Value
+      const totalStockValue = inventory.reduce((acc, item) => acc + (item.quantity * item.buy_price), 0);
+      const potentialStockRevenue = inventory.reduce((acc, item) => acc + (item.quantity * item.sell_price), 0);
+
+      return { 
+          totalEstimatedRevenue, 
+          realizedRevenue, 
+          totalRequests, 
+          trendData, 
+          statusData,
+          totalStockValue,
+          potentialStockRevenue
+      };
+  }, [requests, inventory]);
+
+  const customerSpecificData = useMemo(() => {
+      if (!selectedCustomer) return null;
+      const customerRequests = requests.filter(r => r.user_id === selectedCustomer.id);
+      const totalSpend = customerRequests.reduce((acc, curr) => {
+          if (['completed', 'shipped', 'resolved', 'approved'].includes(curr.status) && curr.estimated_cost) return acc + curr.estimated_cost;
+          return acc;
+      }, 0);
+      return { requests: customerRequests, totalSpend };
+  }, [requests, selectedCustomer]);
+
+
+  // --- HANDLERS ---
+  
+  const fetchNotes = async (requestId: number | string) => {
     try {
-      const { data, error } = await supabase
-        .from('service_notes')
-        .select('*, author:profiles(role, full_name)')
-        .eq('request_id', requestId)
-        .order('created_at', { ascending: true }); 
-      if (error) throw error;
-      if (isMounted.current) setNotes(data as ServiceNote[] || []);
-    } catch (e) {
-      console.error("Notes error:", e);
-    }
+      const { data: notesData, error: notesError } = await supabase.from('service_notes').select('*').eq('request_id', requestId).order('created_at', { ascending: true });
+      if (notesError) throw notesError;
+      const authorIds = [...new Set(notesData?.map(n => n.author_id).filter(Boolean))];
+      let profileMap: Record<string, any> = {};
+      if (authorIds.length > 0) {
+        const { data: profiles } = await supabase.from('profiles').select('id, full_name, role').in('id', authorIds);
+        if (profiles) profiles.forEach(p => { profileMap[p.id] = p; });
+      }
+      const mergedNotes = notesData?.map(n => ({ ...n, author: profileMap[n.author_id] || { role: 'customer', full_name: 'Kullanıcı' } }));
+      if (isMounted.current) setNotes(mergedNotes as ServiceNote[] || []);
+      setUnreadMap(prev => ({ ...prev, [String(requestId)]: false }));
+    } catch (e) { toast.error("Notlar yüklenirken bağlantı hatası."); }
   };
 
   const handleExportExcel = () => {
       if (requests.length === 0) return toast.error("Veri yok.");
-      const data = requests.map(req => ({
-          "Müşteri": req.full_name, "Telefon": req.phone, "E-posta": req.email, "Cihaz": `${req.brand} ${req.model}`, "Durum": req.status, "Tarih": new Date(req.created_at).toLocaleDateString('tr-TR')
-      }));
+      const data = requests.map(req => ({ "Müşteri": req.full_name, "Telefon": req.phone, "E-posta": req.email, "Cihaz": `${req.brand} ${req.model}`, "Durum": req.status, "Fiyat": `${req.estimated_cost || 0} ${req.currency}`, "Tarih": new Date(req.created_at).toLocaleDateString('tr-TR') }));
       const ws = XLSX.utils.json_to_sheet(data);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Rapor");
       XLSX.writeFile(wb, `Teknik_Servis_Raporu_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  const handleOpenDetail = (req: ServiceRequest) => {
-    setSelectedRequest(req);
-    fetchNotes(req.id);
-    document.body.style.overflow = 'hidden';
+  const handlePreviewPdf = async () => {
+      if (!selectedRequest) return;
+      setIsGeneratingPdf(true);
+      try {
+          await new Promise(r => setTimeout(r, 100));
+          const blob = await pdf(<ServicePdfDocument request={selectedRequest} notes={notes} />).toBlob();
+          const url = URL.createObjectURL(blob);
+          window.open(url, '_blank');
+      } catch (e: any) { 
+          toast.error(`PDF Hatası: ${e.message}`); 
+      } finally { 
+          setIsGeneratingPdf(false); 
+      }
   };
 
   const handleCloseDetail = () => {
-    setSelectedRequest(null);
-    setNotes([]);
-    setNewNote('');
-    document.body.style.overflow = 'auto';
+    setSelectedRequest(null); setNotes([]); setNewNote('');
+    if (!selectedCustomer) document.body.style.overflow = 'auto';
+    window.location.hash = '#/admin-dashboard'; 
   };
 
-  const toggleStatus = async (id: number, currentStatus: string) => {
-    const newStatus = currentStatus === 'pending' ? 'resolved' : 'pending';
-    try {
-      await supabase.from('service_requests').update({ status: newStatus }).eq('id', id);
-      const note = `Durum değiştirildi: ${newStatus === 'resolved' ? 'Çözüldü' : 'Bekliyor'}`;
-      await supabase.from('service_notes').insert({ request_id: id, author_id: session?.user?.id, note });
-      toast.success("Durum güncellendi.");
-      fetchData(true);
-      if (selectedRequest?.id === id) {
-          setSelectedRequest({ ...selectedRequest, status: newStatus as any });
-          fetchNotes(id);
-      }
-      sendUpdateNotificationEmail({
-          to_email: selectedRequest?.email || '', full_name: selectedRequest?.full_name || '', brand: selectedRequest?.brand || '', model: selectedRequest?.model || '', new_status: newStatus.toUpperCase(), latest_note: note
-      }).catch(console.error);
-    } catch (e) { toast.error("Hata oluştu."); }
+  const handleSaveChanges = async () => {
+      if (!selectedRequest) return;
+      try {
+          const { error } = await supabase.from('service_requests').update({ status: editForm.status, estimated_cost: editForm.estimated_cost, currency: editForm.currency, shipping_company: editForm.shipping_company, shipping_tracking_code: editForm.shipping_tracking_code }).eq('id', selectedRequest.id);
+          if (error) throw error;
+          
+          const changeLog = [];
+          if (editForm.status !== selectedRequest.status) changeLog.push(`Durum: ${STATUS_OPTIONS.find(o => o.value === editForm.status)?.label}`);
+          if (editForm.estimated_cost !== selectedRequest.estimated_cost) changeLog.push(`Fiyat: ${editForm.estimated_cost} ${editForm.currency}`);
+          
+          if (changeLog.length > 0) {
+              await supabase.from('service_notes').insert({ 
+                  request_id: selectedRequest.id, 
+                  author_id: session?.user?.id, 
+                  note: `SİSTEM GÜNCELLEMESİ:\n${changeLog.join('\n')}` 
+              });
+          }
+          
+          toast.success("Bilgiler güncellendi.");
+          if (editForm.status !== selectedRequest.status) {
+              let title = "Talep Güncellemesi";
+              let msg = `Cihazınızın durumu güncellendi: ${STATUS_OPTIONS.find(o => o.value === editForm.status)?.label}`;
+              await sendNotification(selectedRequest.user_id, title, msg, 'info', `#/my-requests?id=${selectedRequest.id}`);
+          }
+          setSelectedRequest(prev => prev ? ({ ...prev, ...editForm }) : null);
+          if (editForm.status !== selectedRequest.status || editForm.estimated_cost > 0) {
+             sendUpdateNotificationEmail({ to_email: selectedRequest.email || '', full_name: selectedRequest.full_name || '', brand: selectedRequest.brand || '', model: selectedRequest.model || '', new_status: STATUS_OPTIONS.find(o => o.value === editForm.status)?.label || '', latest_note: "Servis durumunuz veya fiyat bilgisi güncellendi." }).catch(console.error);
+          }
+      } catch(e: any) { toast.error("Güncelleme hatası."); }
   };
 
   const handleRejectSubmit = async () => {
@@ -179,12 +408,9 @@ const AdminDashboard: React.FC = () => {
     try {
         await supabase.from('service_requests').update({ status: 'rejected', rejection_reason: rejectionReason }).eq('id', selectedRequest.id);
         await supabase.from('service_notes').insert({ request_id: selectedRequest.id, author_id: session?.user?.id, note: `REDDEDİLDİ: ${rejectionReason}` });
+        await sendNotification(selectedRequest.user_id, "Talep Reddedildi", `Talebi iptal edildi. Neden: ${rejectionReason}`, 'error', `#/my-requests?id=${selectedRequest.id}`);
         toast.success("Talep reddedildi.");
-        setShowRejectModal(false);
-        setRejectionReason('');
-        fetchData(true);
-        if (selectedRequest) setSelectedRequest({ ...selectedRequest, status: 'rejected', rejection_reason: rejectionReason });
-        fetchNotes(selectedRequest.id);
+        setShowRejectModal(false); setRejectionReason('');
     } catch (e) { toast.error("İşlem başarısız."); } finally { setIsRejecting(false); }
   };
 
@@ -200,435 +426,728 @@ const AdminDashboard: React.FC = () => {
             mediaUrl = supabase.storage.from('service-media').getPublicUrl(path).data.publicUrl;
             mediaType = noteFile.type.startsWith('video/') ? 'video' : 'image';
         }
-        await supabase.from('service_notes').insert({ request_id: selectedRequest.id, author_id: session?.user?.id, note: newNote.trim(), media_url: mediaUrl, media_type: mediaType });
+        const { data: insertedNote, error } = await supabase.from('service_notes').insert({ request_id: selectedRequest.id, author_id: session?.user?.id, note: newNote.trim(), media_url: mediaUrl, media_type: mediaType }).select().single();
+        if (error) throw error;
+        if (insertedNote) {
+            const noteWithAuthor = { ...insertedNote, author: { role: 'admin', full_name: profile?.full_name || 'Admin' } };
+            setNotes(prev => [...prev, noteWithAuthor as ServiceNote]);
+        }
+        await sendNotification(selectedRequest.user_id, "Yeni Mesaj", `Teknik servisten yeni bir mesajınız var.`, 'info', `#/my-requests?id=${selectedRequest.id}`);
         setNewNote(''); setNoteFile(null);
-        fetchNotes(selectedRequest.id);
-        toast.success("Not eklendi.");
-    } catch (e) { toast.error("Hata oluştu."); } finally { setIsSendingNote(false); }
+    } catch (e: any) { toast.error("Hata oluştu."); } finally { setIsSendingNote(false); }
   };
 
-  const handleAddStock = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newStock.brand || !newStock.model) return toast.error("Lütfen marka ve model girin.");
-
-    try {
-      const { error } = await supabase
-        .from('broken_stock')
-        .insert([{
-          brand: newStock.brand,
-          model: newStock.model,
-          quantity: newStock.quantity,
-          cosmetic_condition: newStock.cosmetic_condition,
-          failure_reason: newStock.failure_reason,
-          missing_parts: newStock.missing_parts,
-          notes: newStock.notes,
-          status: 'waiting'
-        }]);
-
-      if (error) throw error;
-
-      toast.success("Envanter kaydı eklendi.");
-      setNewStock({
-        brand: '', model: '', quantity: 1, 
-        cosmetic_condition: 'Sıfır Ayarında', 
-        failure_reason: 'Diğer', 
-        missing_parts: '', notes: '' 
-      });
-      fetchData(true);
-    } catch (err: any) {
-      toast.error("Hata oluştu: " + err.message);
-    }
+  // --- INVENTORY HANDLERS ---
+  const handleSaveStock = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!stockForm.name || stockForm.quantity === undefined) return toast.error("Ürün adı ve stok adedi zorunludur.");
+      
+      try {
+          if (stockForm.id) {
+              const { error } = await supabase.from('inventory').update({
+                  name: stockForm.name,
+                  category: stockForm.category,
+                  sku: stockForm.sku,
+                  quantity: stockForm.quantity,
+                  critical_level: stockForm.critical_level,
+                  buy_price: stockForm.buy_price,
+                  sell_price: stockForm.sell_price,
+                  shelf_location: stockForm.shelf_location,
+                  status: stockForm.status,
+                  notes: stockForm.notes
+              }).eq('id', stockForm.id);
+              if (error) throw error;
+              toast.success("Ürün güncellendi.");
+          } else {
+              const { error } = await supabase.from('inventory').insert([{
+                  name: stockForm.name,
+                  category: stockForm.category,
+                  sku: stockForm.sku,
+                  quantity: stockForm.quantity,
+                  critical_level: stockForm.critical_level,
+                  buy_price: stockForm.buy_price,
+                  sell_price: stockForm.sell_price,
+                  shelf_location: stockForm.shelf_location,
+                  status: stockForm.status,
+                  notes: stockForm.notes
+              }]);
+              if (error) throw error;
+              toast.success("Ürün eklendi.");
+          }
+          setShowStockModal(false);
+          setStockForm({ name: '', category: 'Yedek Parça', quantity: 0, critical_level: 5, status: 'new', notes: '' });
+          fetchData(true);
+      } catch (e: any) { toast.error("Hata: " + e.message); }
   };
 
-  const filteredRequests = requests.filter(req => {
-    const s = searchTerm.toLowerCase();
-    const match = (req.full_name || '').toLowerCase().includes(s) || (req.brand || '').toLowerCase().includes(s) || (req.model || '').toLowerCase().includes(s);
-    return match && (requestFilter === 'all' ? true : req.status === requestFilter);
-  });
-
-  const filteredStock = stockItems.filter(item => {
-    const s = searchTerm.toLowerCase();
-    return (item.brand || '').toLowerCase().includes(s) || (item.model || '').toLowerCase().includes(s);
-  });
-
-  const StatusBadge = ({ status, large = false }: { status: string, large?: boolean }) => {
-    let classes = '';
-    switch(status) {
-        case 'resolved': classes = 'bg-green-500/10 text-green-400 border-green-500/20'; break;
-        case 'rejected': classes = 'bg-red-500/10 text-red-400 border-red-500/20'; break;
-        default: classes = 'bg-amber-500/10 text-amber-400 border-amber-500/20'; break;
-    }
-    return <span className={`inline-flex items-center gap-1 font-bold border rounded-full px-3 py-1 ${large ? 'text-xs' : 'text-[10px]'} ${classes}`}>{status.toUpperCase()}</span>;
+  // Trigger Confirmation Modal
+  const handleDeleteClick = (id: string, e?: React.MouseEvent) => {
+      if (e) e.stopPropagation();
+      setItemToDelete(id);
   };
 
-  if (profile?.role !== 'admin') return <div className="p-20 text-center text-zinc-500"><Lock className="mx-auto mb-4 w-10 h-10" /> Yetkisiz Erişim</div>;
+  // Perform Actual Delete
+  const performDelete = async () => {
+      if (!itemToDelete) return;
+      try {
+          const { error } = await supabase.from('inventory').delete().eq('id', itemToDelete);
+          if (error) throw error;
+          setInventory(prev => prev.filter(i => i.id !== itemToDelete));
+          toast.success("Ürün başarıyla silindi.");
+          setItemToDelete(null);
+      } catch (e: any) { 
+          console.error("Delete Error", e);
+          toast.error("Silinemedi: " + (e.message || "Yetki hatası")); 
+      }
+  };
+
+  const handleEditInventory = (item: InventoryItem, e?: React.MouseEvent) => {
+      if (e) e.stopPropagation(); 
+      setStockForm(item);
+      setShowStockModal(true);
+  };
+
 
   return (
-    <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-10">
-      {/* HEADER CONTROLS */}
-      <div className="flex flex-col gap-6 mb-10">
-        <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-           <h2 className="text-2xl md:text-3xl font-serif font-bold text-zinc-100 flex items-center gap-3">
-             <AnchorLogo className="w-8 h-8" /> Yönetim Paneli
-           </h2>
-           <div className="flex items-center gap-2 w-full md:w-auto">
-              <button onClick={() => fetchData(false)} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-zinc-800/50 hover:bg-zinc-800 text-sm px-6 py-3 rounded-xl text-zinc-300 border border-white/5">
-                <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} /> Yenile
-              </button>
-           </div>
+    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
+      {/* Search and Tabs Bar */}
+      <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-zinc-900/50 p-4 rounded-2xl border border-white/5 backdrop-blur-sm shadow-xl">
+        <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-1 md:pb-0 scrollbar-hide">
+           {(['requests', 'crm', 'stock', 'reports'] as TabType[]).map(t => (
+             <button
+               key={t} onClick={() => setActiveTab(t)}
+               className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap uppercase tracking-widest ${activeTab === t ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'}`}
+             >
+               {t === 'requests' && 'Talepler'}
+               {t === 'crm' && 'Müşteriler'}
+               {t === 'stock' && 'Stok'}
+               {t === 'reports' && 'Raporlar'}
+             </button>
+           ))}
         </div>
-
-        <div className="flex flex-col lg:flex-row gap-4">
-           <div className="glass-panel p-1 rounded-2xl flex overflow-x-auto no-scrollbar bg-black/40">
-              <button onClick={() => setActiveTab('requests')} className={`flex-1 px-6 py-3 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'requests' ? 'bg-zinc-800 text-amber-500 shadow-xl' : 'text-zinc-500 hover:text-zinc-300'}`}>
-                 <LayoutList className="w-4 h-4 inline mr-2" /> Talepler
-              </button>
-              <button onClick={() => setActiveTab('crm')} className={`flex-1 px-6 py-3 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'crm' ? 'bg-zinc-800 text-amber-500 shadow-xl' : 'text-zinc-500 hover:text-zinc-300'}`}>
-                 <Users className="w-4 h-4 inline mr-2" /> Müşteriler
-              </button>
-              <button onClick={() => setActiveTab('stock')} className={`flex-1 px-6 py-3 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'stock' ? 'bg-zinc-800 text-amber-500 shadow-xl' : 'text-zinc-500 hover:text-zinc-300'}`}>
-                 <Package className="w-4 h-4 inline mr-2" /> Envanter
-              </button>
-           </div>
-
-           <div className="relative flex-1">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-              <input type="text" placeholder="Arama yapın..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full h-full bg-zinc-900/50 border border-zinc-800 rounded-xl pl-12 pr-4 py-4 text-zinc-100 focus:border-amber-500/30 outline-none transition-all" />
-           </div>
-
-           <div className="flex gap-2">
-              {activeTab === 'requests' && (
-                  <select value={requestFilter} onChange={(e) => setRequestFilter(e.target.value as RequestFilter)} className="bg-zinc-900 border border-zinc-800 text-zinc-300 text-xs px-4 py-3 rounded-xl outline-none appearance-none cursor-pointer hover:border-amber-500/20">
-                      <option value="pending">BEKLEYEN</option>
-                      <option value="resolved">ÇÖZÜLEN</option>
-                      <option value="rejected">REDDEDİLEN</option>
-                      <option value="all">TÜMÜ</option>
-                  </select>
-              )}
-              <button onClick={handleExportExcel} className="p-3 bg-green-900/20 text-green-400 border border-green-500/20 rounded-xl hover:bg-green-500/10"><FileSpreadsheet className="w-6 h-6" /></button>
-           </div>
+        <div className="flex items-center gap-2 w-full md:w-auto">
+             <div className="relative flex-1 md:w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                <input 
+                  type="text" placeholder="Hızlı Ara..." value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-xs text-zinc-200 focus:border-amber-500/50 outline-none transition-all"
+                />
+             </div>
+             <button onClick={() => fetchData(false)} disabled={isRefreshing} className="p-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-zinc-400 transition-all"><RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} /></button>
+             <button onClick={handleExportExcel} className="p-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-zinc-400 transition-all"><FileSpreadsheet className="w-4 h-4 text-green-500" /></button>
         </div>
       </div>
 
-      {/* MAIN CONTENT AREA */}
-      <div className="space-y-4">
-         {activeTab === 'requests' && (
-             <div className="grid grid-cols-1 gap-4">
-                {isLoadingData ? <div className="py-20 text-center"><Loader2 className="w-10 h-10 animate-spin mx-auto text-amber-500" /></div> : filteredRequests.length === 0 ? <div className="py-20 text-center text-zinc-600">Kayıt bulunamadı.</div> : (
-                   filteredRequests.map(req => (
-                      <div key={req.id} onClick={() => handleOpenDetail(req)} className="glass-panel p-5 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:bg-zinc-800/40 cursor-pointer border-white/5 group transition-all active:scale-[0.99]">
-                         <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-3 mb-2">
-                               <StatusBadge status={req.status} />
-                               <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-tight">{new Date(req.created_at).toLocaleDateString('tr-TR')}</span>
-                            </div>
-                            <h3 className="font-bold text-zinc-100 text-lg group-hover:text-amber-500 transition-colors truncate">{req.full_name}</h3>
-                            <p className="text-zinc-500 text-sm truncate">{req.brand} {req.model}</p>
-                         </div>
-                         <div className="flex items-center gap-4 w-full sm:w-auto justify-between border-t sm:border-t-0 border-white/5 pt-3 sm:pt-0">
-                            <div className="flex -space-x-3 overflow-hidden">
-                                {req.media_urls?.slice(0, 3).map((m, i) => (
-                                    <div key={i} className="w-10 h-10 rounded-full border-2 border-zinc-900 bg-zinc-800 overflow-hidden shadow-lg shadow-black/50">
-                                        <img src={m.url} className="w-full h-full object-cover" alt="" />
+      {/* REQUESTS VIEW */}
+      {activeTab === 'requests' && (
+         <div className="space-y-4">
+            <div className="flex gap-2 text-[10px] overflow-x-auto pb-1 scrollbar-hide">
+               {(['pending', 'resolved', 'rejected', 'all'] as RequestFilter[]).map(f => (
+                  <button key={f} onClick={() => setRequestFilter(f)} className={`px-4 py-2 rounded-lg border font-bold uppercase tracking-tighter whitespace-nowrap transition-all ${requestFilter === f ? 'bg-zinc-800 border-zinc-600 text-zinc-100' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>
+                     {f === 'pending' && 'Bekleyenler'} {f === 'resolved' && 'Tamamlananlar'} {f === 'rejected' && 'İptaller'} {f === 'all' && 'Tümü'}
+                  </button>
+               ))}
+            </div>
+            <div className="grid gap-3">
+              {isLoadingData ? (
+                 <div className="p-12 text-center text-zinc-500 uppercase text-xs tracking-widest"><Loader2 className="w-8 h-8 animate-spin mx-auto mb-3 text-amber-500"/> Yükleniyor...</div>
+              ) : requests.length === 0 ? (
+                 <div className="p-12 text-center text-zinc-500 border border-dashed border-zinc-800 rounded-2xl text-xs uppercase">Talep bulunamadı.</div>
+              ) : (
+                requests
+                .filter(r => {
+                    const matchesSearch = r.full_name.toLowerCase().includes(searchTerm.toLowerCase()) || String(r.id).includes(searchTerm) || r.brand.toLowerCase().includes(searchTerm);
+                    if (!matchesSearch) return false;
+                    if (requestFilter === 'all') return true;
+                    if (requestFilter === 'pending') return ['pending', 'diagnosing', 'pending_approval', 'approved', 'waiting_parts'].includes(r.status);
+                    if (requestFilter === 'resolved') return ['resolved', 'shipped', 'completed'].includes(r.status);
+                    if (requestFilter === 'rejected') return r.status === 'rejected';
+                    return true;
+                })
+                .map(req => (
+                    <div key={req.id} onClick={() => handleOpenDetail(req)} className="group bg-zinc-900/50 hover:bg-zinc-800/80 border border-white/5 hover:border-amber-500/20 p-4 rounded-xl cursor-pointer transition-all relative overflow-hidden shadow-lg">
+                        {unreadMap[String(req.id)] && ( <div className="absolute top-0 right-0 w-2 h-2 bg-amber-500 rounded-full animate-pulse m-3 shadow-[0_0_10px_#f59e0b]"></div> )}
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                            <div className="flex items-center gap-4 flex-1 min-w-0">
+                                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 border border-white/5 transition-all ${unreadMap[String(req.id)] ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20' : 'bg-zinc-800 text-zinc-500'}`}>
+                                    {unreadMap[String(req.id)] ? <MessageCircle className="w-5 h-5" /> : <Wrench className="w-5 h-5" />}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2 mb-0.5">
+                                        <span className="font-bold text-zinc-100 truncate text-sm uppercase tracking-tight">{req.full_name}</span>
+                                        <span className="text-[9px] font-mono bg-zinc-950 px-1.5 py-0.5 rounded text-zinc-600 border border-zinc-800">#{String(req.id).slice(0, 6)}</span>
                                     </div>
-                                ))}
-                            </div>
-                            <ChevronRight className="w-6 h-6 text-zinc-700 group-hover:text-amber-500" />
-                         </div>
-                      </div>
-                   ))
-                )}
-             </div>
-         )}
-
-         {activeTab === 'crm' && (
-             <div className="glass-panel rounded-2xl overflow-hidden border-white/5">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm">
-                        <thead className="bg-zinc-900/80 text-[10px] font-bold text-zinc-500 uppercase tracking-widest border-b border-white/5">
-                            <tr>
-                                <th className="p-6">Müşteri</th>
-                                <th className="p-6">İletişim</th>
-                                <th className="p-6 text-center">Talep Sayısı</th>
-                                <th className="p-6">Son Kayıt</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-white/5">
-                            {profiles.map(p => (
-                                <tr key={p.id} className="hover:bg-zinc-800/30 transition-colors">
-                                    <td className="p-6">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-amber-500">
-                                                <User className="w-5 h-5" />
-                                            </div>
-                                            <span className="font-bold text-zinc-200">{p.full_name}</span>
-                                        </div>
-                                    </td>
-                                    <td className="p-6">
-                                        <div className="flex flex-col">
-                                            <span className="text-zinc-400 font-medium">{p.email}</span>
-                                            <span className="text-zinc-600 text-[10px]">{p.phone}</span>
-                                        </div>
-                                    </td>
-                                    <td className="p-6 text-center font-mono font-bold text-amber-500">{p.request_count}</td>
-                                    <td className="p-6 text-zinc-500 text-xs">{p.created_at ? new Date(p.created_at).toLocaleDateString('tr-TR') : '-'}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-             </div>
-         )}
-
-         {activeTab === 'stock' && (
-             <div className="space-y-8">
-                <div className="glass-panel p-6 md:p-8 rounded-3xl bg-zinc-900/40 border-dashed border-zinc-800 animate-in fade-in zoom-in-95">
-                   <h3 className="text-sm font-bold text-zinc-100 mb-6 flex items-center gap-3">
-                     <div className="p-2 bg-amber-500/10 rounded-lg"><Plus className="w-4 h-4 text-amber-500" /></div>
-                     Yeni Envanter Kaydı
-                   </h3>
-                   <form onSubmit={handleAddStock} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                      <div className="space-y-2">
-                        <label className="text-[10px] uppercase font-bold text-zinc-600 tracking-widest ml-1">Marka</label>
-                        <input value={newStock.brand} onChange={e => setNewStock({...newStock, brand: e.target.value})} placeholder="Örn: Cheyenne" className="w-full bg-black/40 border border-zinc-800 rounded-xl px-4 py-3.5 text-sm outline-none focus:border-amber-500/50 transition-all text-zinc-200" />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-[10px] uppercase font-bold text-zinc-600 tracking-widest ml-1">Model</label>
-                        <input value={newStock.model} onChange={e => setNewStock({...newStock, model: e.target.value})} placeholder="Örn: Sol Nova" className="w-full bg-black/40 border border-zinc-800 rounded-xl px-4 py-3.5 text-sm outline-none focus:border-amber-500/50 transition-all text-zinc-200" />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-[10px] uppercase font-bold text-zinc-600 tracking-widest ml-1">Miktar</label>
-                        <input type="number" min="1" value={newStock.quantity} onChange={e => setNewStock({...newStock, quantity: parseInt(e.target.value)})} placeholder="Adet" className="w-full bg-black/40 border border-zinc-800 rounded-xl px-4 py-3.5 text-sm outline-none focus:border-amber-500/50 transition-all text-zinc-200" />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-[10px] uppercase font-bold text-zinc-600 tracking-widest ml-1">Kozmetik Durum</label>
-                        <select value={newStock.cosmetic_condition} onChange={e => setNewStock({...newStock, cosmetic_condition: e.target.value})} className="w-full bg-black/40 border border-zinc-800 rounded-xl px-4 py-3.5 text-sm outline-none focus:border-amber-500/50 transition-all text-zinc-200">
-                            <option value="Sıfır Ayarında">Sıfır Ayarında</option>
-                            <option value="İyi">İyi</option>
-                            <option value="Yıpranmış">Yıpranmış</option>
-                            <option value="Parçalık">Parçalık</option>
-                        </select>
-                      </div>
-                      <div className="lg:col-span-2 space-y-2">
-                        <label className="text-[10px] uppercase font-bold text-zinc-600 tracking-widest ml-1">Eksik Parçalar</label>
-                        <input value={newStock.missing_parts} onChange={e => setNewStock({...newStock, missing_parts: e.target.value})} placeholder="Örn: Kablo eksik" className="w-full bg-black/40 border border-zinc-800 rounded-xl px-4 py-3.5 text-sm outline-none focus:border-amber-500/50 transition-all text-zinc-200" />
-                      </div>
-                      <div className="lg:col-span-2 space-y-2">
-                        <label className="text-[10px] uppercase font-bold text-zinc-600 tracking-widest ml-1">Notlar</label>
-                        <input value={newStock.notes} onChange={e => setNewStock({...newStock, notes: e.target.value})} placeholder="Ekstra bilgi..." className="w-full bg-black/40 border border-zinc-800 rounded-xl px-4 py-3.5 text-sm outline-none focus:border-amber-500/50 transition-all text-zinc-200" />
-                      </div>
-                      <div className="lg:col-span-4 pt-2">
-                        <button type="submit" className="w-full bg-gradient-to-r from-amber-500 to-yellow-600 text-black font-bold py-4 rounded-xl hover:shadow-lg hover:shadow-amber-500/10 transition-all flex items-center justify-center gap-2">
-                          <Package className="w-4 h-4" /> ENVANTERE EKLE
-                        </button>
-                      </div>
-                   </form>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {filteredStock.map(item => (
-                        <div key={item.id} className="glass-panel p-5 rounded-2xl border-white/5 hover:border-amber-500/30 transition-all group relative overflow-hidden">
-                            <div className="flex justify-between items-start mb-4">
-                                <div>
-                                    <h4 className="font-bold text-zinc-100 truncate pr-2 group-hover:text-amber-500 transition-colors">{item.brand}</h4>
-                                    <p className="text-zinc-500 text-xs">{item.model}</p>
-                                </div>
-                                <span className="bg-zinc-800 text-[10px] px-2 py-1 rounded text-zinc-400 border border-white/5 uppercase font-bold">{item.status}</span>
-                            </div>
-                            <div className="space-y-3 mb-6 bg-black/20 p-3 rounded-xl border border-white/5">
-                                <div className="flex items-center justify-between text-[10px] text-zinc-500 uppercase tracking-widest">
-                                  <span>Miktar</span>
-                                  <strong className="text-zinc-200 text-xs">{item.quantity}</strong>
-                                </div>
-                                <div className="flex items-center justify-between text-[10px] text-zinc-500 uppercase tracking-widest">
-                                  <span>Durum</span>
-                                  <strong className="text-zinc-200 text-xs">{item.cosmetic_condition}</strong>
+                                    <div className="text-[10px] text-zinc-500 truncate uppercase font-medium">{req.brand} {req.model} • {new Date(req.created_at).toLocaleDateString()}</div>
                                 </div>
                             </div>
-                            <div className="flex justify-between items-center pt-4 border-t border-white/5">
-                                <span className="text-[9px] text-zinc-600 font-mono">{new Date(item.created_at).toLocaleDateString('tr-TR')}</span>
-                                <button onClick={() => toast.success("Geliştirme aşamasında...")} className="text-amber-500 text-xs font-bold hover:underline">DÜZENLE</button>
+                            <div className="flex items-center justify-between sm:justify-end gap-4 pl-14 sm:pl-0">
+                                <span className={`px-3 py-1 rounded-full text-[9px] font-bold border whitespace-nowrap uppercase tracking-wider ${STATUS_OPTIONS.find(o=>o.value===req.status)?.color}`}>
+                                    {STATUS_OPTIONS.find(o=>o.value===req.status)?.label}
+                                </span>
+                                <ChevronRight className="w-5 h-5 text-zinc-700 group-hover:text-amber-500 transition-transform group-hover:translate-x-1" />
                             </div>
                         </div>
-                    ))}
-                </div>
-             </div>
-         )}
-      </div>
-
-      {/* REQUEST DETAIL MODAL - ULTIMATE MOBILE FIX */}
-      {selectedRequest && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/95 backdrop-blur-xl">
-          {/* Close button at top-right of the whole screen to ensure accessibility */}
-          <button 
-            onClick={handleCloseDetail} 
-            className="fixed top-4 right-4 z-[10001] p-4 bg-zinc-800 hover:bg-red-500/20 hover:text-red-500 rounded-full text-zinc-100 border border-white/10 shadow-2xl active:scale-90 transition-all"
-          >
-            <X className="w-6 h-6" />
-          </button>
-
-          <div className="w-full h-full md:max-w-6xl md:h-[95dvh] md:rounded-3xl relative flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            
-            {/* PINNED HEADER - REDESIGNED FOR GUARANTEED VISIBILITY */}
-            <div className="shrink-0 bg-zinc-900 border-b border-white/10 p-6 md:p-10 pt-12 md:pt-10">
-               <div className="flex flex-col gap-6">
-                  {/* Row 1: Name and Status */}
-                  <div className="flex items-start justify-between gap-4">
-                     <div className="flex-1 min-w-0">
-                        <div className="flex flex-wrap items-center gap-3 mb-2">
-                           <h3 className="text-2xl md:text-4xl font-serif font-bold text-zinc-100 tracking-tight leading-none break-words">
-                             {selectedRequest.full_name}
-                           </h3>
-                           <StatusBadge status={selectedRequest.status} large />
-                        </div>
-                        <p className="text-[10px] md:text-xs text-zinc-500 font-bold uppercase tracking-[0.3em]">TEKNİK SERVİS DOSYASI</p>
-                     </div>
-                  </div>
-
-                  {/* Row 2: Info Grid - Stacked on Mobile for Space */}
-                  <div className="flex flex-col sm:flex-row flex-wrap gap-2 md:gap-4">
-                     <div className="flex items-center gap-3 bg-black/60 px-4 py-3 rounded-2xl border border-white/10 shadow-xl min-w-0">
-                        <Mail className="w-4 h-4 text-amber-500 shrink-0" />
-                        <span className="text-[11px] md:text-sm text-zinc-100 font-bold truncate">{selectedRequest.email}</span>
-                     </div>
-                     <div className="flex items-center gap-3 bg-black/60 px-4 py-3 rounded-2xl border border-white/10 shadow-xl min-w-0">
-                        <Phone className="w-4 h-4 text-amber-500 shrink-0" />
-                        <span className="text-[11px] md:text-sm text-zinc-100 font-bold">{selectedRequest.phone}</span>
-                     </div>
-                     <div className="flex items-center gap-3 bg-black/60 px-4 py-3 rounded-2xl border border-white/10 shadow-xl min-w-0">
-                        <Layers className="w-4 h-4 text-amber-500 shrink-0" />
-                        <span className="text-[11px] md:text-sm text-zinc-100 font-bold truncate">{selectedRequest.category}</span>
-                     </div>
-                  </div>
-               </div>
+                    </div>
+                ))
+              )}
             </div>
-
-            {/* SCROLLABLE BODY */}
-            <div className="flex-1 overflow-y-auto p-6 md:p-10 custom-scrollbar">
-               <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 pb-20">
-                  {/* LEFT: WORKFLOW & NOTES */}
-                  <div className="lg:col-span-5 flex flex-col gap-8 order-2 lg:order-1">
-                     <div className="glass-panel rounded-3xl p-6 bg-zinc-900/40 border-white/5 flex flex-col min-h-[500px]">
-                        <h4 className="text-[10px] font-bold text-amber-500 uppercase tracking-[0.2em] mb-8 flex items-center gap-2 pb-5 border-b border-white/5">
-                           <History className="w-4 h-4" /> Servis İş Akışı
-                        </h4>
-                        
-                        <div className="flex-1 overflow-y-auto pr-2 space-y-8 mb-8 custom-scrollbar">
-                           <div className="relative pl-6 pb-6 border-l border-zinc-800 last:border-0">
-                              <div className="absolute -left-[5.5px] top-1.5 w-2.5 h-2.5 rounded-full bg-zinc-600 ring-4 ring-zinc-950"></div>
-                              <div className="text-[10px] text-zinc-500 font-mono mb-2 uppercase tracking-tight">{new Date(selectedRequest.created_at).toLocaleString('tr-TR')}</div>
-                              <div className="text-sm text-zinc-400 bg-zinc-900/50 p-5 rounded-2xl border border-white/5 italic">Müşteri talebi başarıyla oluşturuldu.</div>
-                           </div>
-                           
-                           {notes.map(note => (
-                              <div key={note.id} className="relative pl-6 pb-6 border-l border-zinc-800 last:border-0">
-                                 <div className="absolute -left-[5.5px] top-1.5 w-2.5 h-2.5 rounded-full bg-amber-500 ring-4 ring-zinc-950 shadow-[0_0_12px_rgba(245,158,11,0.5)]"></div>
-                                 <div className="flex items-center gap-2 mb-2">
-                                    <div className="text-[10px] text-zinc-500 font-mono uppercase tracking-tight">{new Date(note.created_at).toLocaleString('tr-TR')}</div>
-                                    <span className={`text-[9px] px-2 py-0.5 rounded font-bold ${note.author?.role === 'admin' ? 'bg-amber-500 text-black' : 'bg-zinc-800 text-zinc-400 border border-white/5'}`}>{note.author?.role === 'admin' ? 'TEKNİK EKİP' : 'MÜŞTERİ'}</span>
-                                 </div>
-                                 <div className="text-sm text-zinc-200 bg-zinc-900 p-5 rounded-2xl border border-white/5 shadow-lg">
-                                    <p className="whitespace-pre-wrap leading-relaxed">{note.note}</p>
-                                    {note.media_url && (
-                                       <div className="mt-5 rounded-2xl overflow-hidden border border-zinc-700 bg-black/50 cursor-pointer group" onClick={() => setLightboxMedia({url: note.media_url!, type: note.media_type!})}>
-                                          {note.media_type === 'image' ? <img src={note.media_url} className="w-full h-40 object-cover group-hover:scale-110 transition-transform duration-700" alt="" /> : <div className="w-full h-40 flex items-center justify-center bg-zinc-800"><Play className="w-12 h-12 text-amber-500" /></div>}
-                                       </div>
-                                    )}
-                                 </div>
-                              </div>
-                           ))}
-                        </div>
-
-                        {/* NOTE INPUT */}
-                        <form onSubmit={handleAddNote} className="flex items-center gap-3 pt-6 border-t border-white/5 mt-auto">
-                           <input type="file" ref={fileInputRef} className="hidden" onChange={e => setNoteFile(e.target.files ? e.target.files[0] : null)} />
-                           <button type="button" onClick={() => fileInputRef.current?.click()} className={`p-5 rounded-2xl border border-zinc-800 transition-all ${noteFile ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20' : 'bg-zinc-950 text-zinc-600 hover:text-amber-500'}`}><Paperclip className="w-6 h-6" /></button>
-                           <input type="text" value={newNote} onChange={e => setNewNote(e.target.value)} placeholder="Bir not veya işlem detayı girin..." className="flex-1 bg-zinc-950 border border-zinc-800 rounded-2xl px-5 py-4 text-sm outline-none focus:border-amber-500/50 text-zinc-100 transition-all shadow-inner" />
-                           <button type="submit" className="p-5 bg-amber-500 rounded-2xl text-black hover:bg-amber-400 transition-all active:scale-90 shadow-xl shadow-amber-900/30"><Send className="w-6 h-6" /></button>
-                        </form>
-                     </div>
-                  </div>
-
-                  {/* RIGHT: DEVICE DETAILS & MEDIA */}
-                  <div className="lg:col-span-7 space-y-10 order-1 lg:order-2">
-                     <div className="glass-panel p-6 md:p-10 rounded-3xl bg-zinc-900/20 border-white/5 shadow-inner space-y-10">
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                           <div className="bg-zinc-950/70 p-5 rounded-2xl border border-white/5"><span className="block text-[9px] text-zinc-500 font-bold uppercase mb-2 tracking-widest">Marka</span><strong className="text-zinc-100 text-base md:text-lg">{selectedRequest.brand}</strong></div>
-                           <div className="bg-zinc-950/70 p-5 rounded-2xl border border-white/5"><span className="block text-[9px] text-zinc-500 font-bold uppercase mb-2 tracking-widest">Model</span><strong className="text-zinc-100 text-base md:text-lg">{selectedRequest.model}</strong></div>
-                           <div className="bg-zinc-950/70 p-5 rounded-2xl border border-white/5"><span className="block text-[9px] text-zinc-500 font-bold uppercase mb-2 tracking-widest">Kategori</span><strong className="text-amber-500 text-base md:text-lg">{selectedRequest.category}</strong></div>
-                           <div className="bg-zinc-950/70 p-5 rounded-2xl border border-white/5"><span className="block text-[9px] text-zinc-500 font-bold uppercase mb-2 tracking-widest">Alım Tarihi</span><strong className="text-zinc-100 font-mono text-sm">{selectedRequest.product_date}</strong></div>
-                        </div>
-
-                        <div>
-                           <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-4">Müşteri Arıza Beyanı</h4>
-                           <div className="bg-zinc-950/90 p-8 rounded-3xl border border-white/5 text-zinc-200 text-sm md:text-base leading-relaxed italic whitespace-pre-wrap">"{selectedRequest.description}"</div>
-                        </div>
-
-                        {selectedRequest.status === 'rejected' && (
-                           <div className="bg-red-500/5 p-8 rounded-3xl border border-red-500/20 text-red-200 text-sm md:text-base leading-relaxed animate-pulse">
-                             <h4 className="text-[10px] font-bold uppercase mb-3 flex items-center gap-2 text-red-400 tracking-[0.2em]"><AlertTriangle className="w-4 h-4" /> RED NEDENİ</h4>
-                             {selectedRequest.rejection_reason}
-                           </div>
-                        )}
-                     </div>
-
-                     {/* ACTIONS */}
-                     <div className="flex flex-col sm:flex-row gap-5">
-                        <button onClick={() => toggleStatus(selectedRequest.id, selectedRequest.status)} className={`flex-1 flex items-center justify-center gap-4 py-5 md:py-6 rounded-2xl font-bold text-base transition-all shadow-2xl active:scale-[0.98] ${selectedRequest.status === 'pending' ? 'bg-green-600 hover:bg-green-500 text-white shadow-green-900/30' : 'bg-amber-600 hover:bg-amber-500 text-black shadow-amber-900/30'}`}>
-                           {selectedRequest.status === 'pending' ? <CheckCircle className="w-6 h-6" /> : <Clock className="w-6 h-6" />}
-                           {selectedRequest.status === 'pending' ? 'ONARIMI TAMAMLA' : 'DOSYAYI AÇ'}
-                        </button>
-                        {selectedRequest.status !== 'rejected' && (
-                           <button onClick={() => setShowRejectModal(true)} className="flex-1 flex items-center justify-center gap-4 py-5 md:py-6 bg-red-600/10 hover:bg-red-600 text-red-500 hover:text-white border border-red-500/20 rounded-2xl font-bold text-base transition-all active:scale-[0.98]"><XCircle className="w-6 h-6" /> TALEBİ REDDET</button>
-                        )}
-                     </div>
-
-                     {/* MEDIA CLUSTER */}
-                     <div>
-                        <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-6 flex items-center gap-2"><ImageIcon className="w-5 h-5" /> Dosya Ekleri ({selectedRequest.media_urls?.length || 0})</h4>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 md:gap-6">
-                           {selectedRequest.media_urls?.map((m, i) => (
-                              <div key={i} onClick={() => setLightboxMedia({url: m.url, type: m.type})} className="aspect-square bg-zinc-900 rounded-3xl border border-zinc-800 overflow-hidden relative group cursor-pointer hover:border-amber-500/60 transition-all shadow-xl">
-                                 {m.type === 'image' ? <img src={m.url} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" alt="" /> : <div className="w-full h-full flex items-center justify-center bg-zinc-800"><Play className="w-12 h-12 text-amber-500" /></div>}
-                                 <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[2px]"><Maximize2 className="w-10 h-10 text-white" /></div>
-                              </div>
-                           ))}
-                        </div>
-                     </div>
-                  </div>
-               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* REJECT MODAL */}
-      {showRejectModal && (
-         <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/98 backdrop-blur-3xl">
-             <div className="glass-panel p-10 rounded-[2.5rem] w-full max-w-xl border-red-500/30 animate-in zoom-in-95 duration-300 shadow-3xl">
-                <div className="flex items-center gap-5 mb-8 pb-6 border-b border-white/5">
-                   <div className="p-4 bg-red-500/20 rounded-2xl text-red-500 shadow-xl shadow-red-950/20"><XCircle className="w-8 h-8" /></div>
-                   <h3 className="text-2xl font-serif font-bold text-zinc-100">Red Gerekçesi</h3>
-                </div>
-                <textarea value={rejectionReason} onChange={e => setRejectionReason(e.target.value)} placeholder="Müşterinin e-posta bildiriminde göreceği açıklama..." className="w-full h-48 bg-black/60 border border-zinc-800 rounded-3xl p-6 text-zinc-100 text-sm md:text-base outline-none focus:border-red-500/60 mb-8 transition-all shadow-inner" />
-                <div className="flex gap-5">
-                   <button onClick={() => setShowRejectModal(false)} className="flex-1 py-5 bg-zinc-900 text-zinc-500 rounded-2xl font-bold hover:bg-zinc-800 transition-all text-sm tracking-widest">VAZGEÇ</button>
-                   <button onClick={handleRejectSubmit} className="flex-1 py-5 bg-red-600 text-white rounded-2xl font-bold shadow-2xl shadow-red-900/50 hover:bg-red-500 transition-all text-sm tracking-widest">KESİNLEŞTİR</button>
-                </div>
-             </div>
          </div>
       )}
 
-      {/* LIGHTBOX */}
-      {lightboxMedia && (
-        <div className="fixed inset-0 z-[10100] bg-black/98 backdrop-blur-3xl flex items-center justify-center p-6 md:p-12 animate-in fade-in duration-300" onClick={() => setLightboxMedia(null)}>
-           <button onClick={() => setLightboxMedia(null)} className="absolute top-10 right-10 p-5 bg-zinc-800/90 hover:bg-red-600 text-white rounded-full z-[10110] active:scale-75 transition-all shadow-2xl border border-white/10"><X className="w-8 h-8" /></button>
-           <div className="relative max-w-full max-h-full flex items-center justify-center" onClick={e => e.stopPropagation()}>
-                {lightboxMedia.type === 'image' ? <img src={lightboxMedia.url} className="max-w-full max-h-[85dvh] rounded-[2rem] object-contain shadow-[0_0_100px_rgba(0,0,0,1)] border border-white/5" alt="" /> : <video src={lightboxMedia.url} controls autoPlay className="max-w-full max-h-[85dvh] rounded-[2rem] shadow-[0_0_100px_rgba(0,0,0,1)]" />}
-           </div>
+      {/* CRM VIEW */}
+      {activeTab === 'crm' && (
+         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+             {profiles.filter(p => p.full_name?.toLowerCase().includes(searchTerm.toLowerCase())).map(p => (
+                 <div key={p.id} onClick={() => { setSelectedCustomer(p); document.body.style.overflow = 'hidden'; }} className="bg-zinc-900/50 border border-white/5 hover:border-amber-500/30 p-4 rounded-xl cursor-pointer group transition-all shadow-lg flex flex-col h-full">
+                     <div className="flex items-center gap-3 mb-4">
+                         <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-500 group-hover:text-amber-500 group-hover:bg-zinc-700 transition-all shrink-0"><User className="w-5 h-5" /></div>
+                         <div className="min-w-0">
+                             <div className="font-bold text-zinc-200 text-sm truncate uppercase tracking-tight">{p.full_name}</div>
+                             <div className="text-[9px] text-zinc-600 uppercase tracking-widest">{p.role === 'admin' ? 'Yönetici' : 'Müşteri'}</div>
+                         </div>
+                     </div>
+                     <div className="grid grid-cols-4 gap-1.5 text-center mb-4">
+                         <div className="bg-zinc-950 p-2 rounded-lg border border-white/5"> <div className="text-[8px] text-zinc-500 font-bold uppercase mb-0.5">Talep</div> <div className="text-xs font-bold text-zinc-200">{p.request_count}</div> </div>
+                         <div className="bg-zinc-950 p-2 rounded-lg border border-white/5"> <div className="text-[8px] text-green-600 font-bold uppercase mb-0.5">OK</div> <div className="text-xs font-bold text-zinc-200">{p.stats?.resolved || 0}</div> </div>
+                         <div className="bg-zinc-950 p-2 rounded-lg border border-white/5"> <div className="text-[8px] text-amber-500 font-bold uppercase mb-0.5">Aktif</div> <div className="text-xs font-bold text-zinc-200">{p.stats?.pending || 0}</div> </div>
+                         <div className="bg-zinc-950 p-2 rounded-lg border border-red-900/20"> <div className="text-[8px] text-red-500 font-bold uppercase mb-0.5">Red</div> <div className="text-xs font-bold text-red-200">{p.stats?.rejected || 0}</div> </div>
+                     </div>
+                     <div className="flex-1">
+                        <div className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mb-2 border-b border-white/5 pb-1">Son İşlemler</div>
+                        <div className="space-y-2">
+                             {p.latest_requests && p.latest_requests.length > 0 ? (
+                                 p.latest_requests.slice(0, 3).map(req => (
+                                     <div key={req.id} className="bg-zinc-950/30 p-2 rounded-lg border border-white/5 group-hover:border-white/10 transition-colors">
+                                         <div className="flex justify-between items-start mb-0.5">
+                                             <span className="text-[10px] font-bold text-zinc-300 truncate w-2/3">{req.brand} {req.model}</span>
+                                             <div className={`w-1.5 h-1.5 rounded-full mt-1 ${STATUS_OPTIONS.find(o=>o.value===req.status)?.color.split(' ')[0].replace('text-', 'bg-')}`}></div>
+                                         </div>
+                                         <div className="text-[9px] text-zinc-500 truncate flex items-center gap-1">
+                                             <AlertTriangle className="w-2.5 h-2.5" /> {req.category}
+                                         </div>
+                                     </div>
+                                 ))
+                             ) : (
+                                 <div className="text-[10px] text-zinc-600 italic py-2 text-center">İşlem geçmişi yok.</div>
+                             )}
+                        </div>
+                     </div>
+                 </div>
+             ))}
+         </div>
+      )}
+
+      {/* STOCK MANAGEMENT VIEW */}
+      {activeTab === 'stock' && (
+          <div className="space-y-6">
+              <div className="flex justify-end">
+                  <button onClick={() => { setStockForm({}); setShowStockModal(true); }} className="bg-amber-500 hover:bg-amber-400 text-black px-4 py-2 rounded-xl font-bold flex items-center gap-2 text-xs uppercase tracking-widest shadow-lg shadow-amber-900/20">
+                      <Plus className="w-4 h-4"/> Yeni Ürün Ekle
+                  </button>
+              </div>
+
+              {/* Stats Cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="bg-zinc-900/50 p-4 rounded-xl border border-white/5">
+                      <div className="text-[10px] text-zinc-500 font-bold uppercase mb-1">Toplam Kalem</div>
+                      <div className="text-2xl font-bold text-zinc-100">{inventory.length}</div>
+                  </div>
+                  <div className="bg-zinc-900/50 p-4 rounded-xl border border-white/5">
+                      <div className="text-[10px] text-red-500 font-bold uppercase mb-1 flex items-center gap-2"><AlertCircle className="w-3 h-3"/> Kritik Stok</div>
+                      <div className="text-2xl font-bold text-red-400">{inventory.filter(i => i.quantity <= i.critical_level).length}</div>
+                  </div>
+                  <div className="bg-zinc-900/50 p-4 rounded-xl border border-white/5">
+                      <div className="text-[10px] text-zinc-500 font-bold uppercase mb-1">Stok Değeri (Alış)</div>
+                      <div className="text-2xl font-bold text-zinc-100">{analyticsData.totalStockValue.toLocaleString('tr-TR')} ₺</div>
+                  </div>
+                  <div className="bg-zinc-900/50 p-4 rounded-xl border border-white/5">
+                      <div className="text-[10px] text-green-500 font-bold uppercase mb-1">Stok Değeri (Satış)</div>
+                      <div className="text-2xl font-bold text-green-400">{analyticsData.potentialStockRevenue.toLocaleString('tr-TR')} ₺</div>
+                  </div>
+              </div>
+
+              {/* Inventory Table */}
+              <div className="bg-zinc-900/50 rounded-2xl border border-white/5 overflow-hidden shadow-xl">
+                  <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse min-w-[600px]">
+                          <thead className="bg-zinc-950/50 text-[10px] uppercase font-bold text-zinc-500 tracking-wider">
+                              <tr>
+                                  <th className="p-4">Ürün Adı</th>
+                                  <th className="p-4 text-center">Durum</th>
+                                  <th className="p-4">SKU / Konum</th>
+                                  <th className="p-4 text-center">Stok</th>
+                                  <th className="p-4 text-right">Fiyat</th>
+                                  <th className="p-4 text-right">İşlem</th>
+                              </tr>
+                          </thead>
+                          <tbody className="divide-y divide-white/5 text-xs text-zinc-300">
+                              {inventory.filter(i => i.name.toLowerCase().includes(searchTerm.toLowerCase())).map(item => (
+                                  <tr key={item.id} onClick={() => handleEditInventory(item)} className="hover:bg-white/5 transition-colors group cursor-pointer">
+                                      <td className="p-4">
+                                          <div className="font-bold text-zinc-100">{item.name}</div>
+                                          <div className="text-[10px] text-zinc-500">{item.category}</div>
+                                          {item.notes && <div className="mt-1 text-[9px] text-zinc-400 flex items-center gap-1 italic truncate max-w-[150px]"><Info className="w-3 h-3"/> {item.notes}</div>}
+                                      </td>
+                                      <td className="p-4 text-center">
+                                          {item.status && (
+                                              <span className={`inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold uppercase border ${INVENTORY_STATUS_OPTIONS.find(o => o.value === item.status)?.color}`}>
+                                                  {INVENTORY_STATUS_OPTIONS.find(o => o.value === item.status)?.label || item.status}
+                                              </span>
+                                          )}
+                                      </td>
+                                      <td className="p-4">
+                                          <div className="font-mono text-zinc-400">{item.sku || '-'}</div>
+                                          <div className="text-[9px] text-zinc-600">{item.shelf_location || 'Raf Yok'}</div>
+                                      </td>
+                                      <td className="p-4 text-center">
+                                          <span className={`px-2 py-1 rounded-full font-bold text-[10px] ${item.quantity <= item.critical_level ? 'bg-red-900/20 text-red-500 border border-red-900/30' : 'bg-zinc-800 text-zinc-300'}`}>
+                                              {item.quantity} ADET
+                                          </span>
+                                      </td>
+                                      <td className="p-4 text-right">
+                                          <div className="font-bold text-green-400">{item.sell_price} ₺</div>
+                                          <div className="text-[9px] text-zinc-500">Maliyet: {item.buy_price} ₺</div>
+                                      </td>
+                                      <td className="p-4 text-right">
+                                          <div className="flex items-center justify-end gap-2">
+                                              <button 
+                                                onClick={(e) => handleEditInventory(item, e)} 
+                                                className="p-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-zinc-400 hover:text-white transition-colors"
+                                              >
+                                                  <Edit3 className="w-4 h-4"/>
+                                              </button>
+                                              <button 
+                                                onClick={(e) => handleDeleteClick(item.id, e)} 
+                                                className="p-2 bg-zinc-800 hover:bg-red-900/20 rounded-lg text-zinc-400 hover:text-red-500 transition-colors z-10"
+                                              >
+                                                  <Trash2 className="w-4 h-4"/>
+                                              </button>
+                                          </div>
+                                      </td>
+                                  </tr>
+                              ))}
+                              {inventory.length === 0 && (
+                                  <tr><td colSpan={6} className="p-8 text-center text-zinc-500 italic">Envanter boş.</td></tr>
+                              )}
+                          </tbody>
+                      </table>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* REPORTS VIEW - ENHANCED */}
+      {activeTab === 'reports' && (
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {/* KPI Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-gradient-to-br from-green-900/20 to-zinc-900 p-6 rounded-2xl border border-green-500/10 shadow-lg">
+                    <div className="flex items-center gap-3 mb-2">
+                        <div className="p-2 bg-green-900/20 rounded-lg text-green-500"><DollarSign className="w-5 h-5"/></div>
+                        <h3 className="text-[10px] uppercase font-bold text-zinc-500 tracking-widest">Gerçekleşen Ciro</h3>
+                    </div>
+                    <div className="text-2xl font-bold text-zinc-100">{analyticsData.realizedRevenue.toLocaleString('tr-TR')} ₺</div>
+                </div>
+                <div className="bg-gradient-to-br from-amber-900/20 to-zinc-900 p-6 rounded-2xl border border-amber-500/10 shadow-lg">
+                     <div className="flex items-center gap-3 mb-2">
+                        <div className="p-2 bg-amber-900/20 rounded-lg text-amber-500"><TrendingUp className="w-5 h-5"/></div>
+                        <h3 className="text-[10px] uppercase font-bold text-zinc-500 tracking-widest">Bekleyen Ciro</h3>
+                    </div>
+                    <div className="text-2xl font-bold text-zinc-100">{(analyticsData.totalEstimatedRevenue - analyticsData.realizedRevenue).toLocaleString('tr-TR')} ₺</div>
+                </div>
+                <div className="bg-zinc-900/50 p-6 rounded-2xl border border-white/5 shadow-lg">
+                     <div className="flex items-center gap-3 mb-2">
+                        <div className="p-2 bg-zinc-800 rounded-lg text-zinc-400"><Wrench className="w-5 h-5"/></div>
+                        <h3 className="text-[10px] uppercase font-bold text-zinc-500 tracking-widest">Toplam İşlem</h3>
+                    </div>
+                    <div className="text-2xl font-bold text-zinc-100">{analyticsData.totalRequests}</div>
+                </div>
+                <div className="bg-zinc-900/50 p-6 rounded-2xl border border-white/5 shadow-lg">
+                     <div className="flex items-center gap-3 mb-2">
+                        <div className="p-2 bg-blue-900/20 rounded-lg text-blue-500"><Activity className="w-5 h-5"/></div>
+                        <h3 className="text-[10px] uppercase font-bold text-zinc-500 tracking-widest">Aktif İşler</h3>
+                    </div>
+                    <div className="text-2xl font-bold text-zinc-100">{requests.filter(r => !['completed','rejected','resolved','shipped'].includes(r.status)).length}</div>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Financial Trend Chart */}
+                <div className="bg-zinc-900/50 p-6 rounded-2xl border border-white/5 shadow-xl">
+                    <h3 className="text-zinc-100 font-bold mb-6 text-xs uppercase tracking-widest flex items-center gap-2">
+                        <BarChart2 className="w-4 h-4 text-amber-500"/> Aylık Ciro Analizi
+                    </h3>
+                    <div className="h-72 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={analyticsData.trendData}>
+                                <defs>
+                                    <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3}/>
+                                        <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                                <XAxis dataKey="name" stroke="#666" fontSize={10} axisLine={false} tickLine={false} />
+                                <YAxis stroke="#666" fontSize={10} axisLine={false} tickLine={false} tickFormatter={(val) => `${val/1000}k`} />
+                                <RechartsTooltip 
+                                    contentStyle={{backgroundColor: '#18181b', borderColor: '#333', borderRadius: '12px', fontSize: '12px'}} 
+                                    itemStyle={{color:'#fff'}}
+                                    formatter={(val: number) => [`${val.toLocaleString()} ₺`, 'Ciro']}
+                                />
+                                <Area type="monotone" dataKey="revenue" stroke="#f59e0b" fillOpacity={1} fill="url(#colorRevenue)" strokeWidth={2} />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                {/* Status Distribution */}
+                <div className="bg-zinc-900/50 p-6 rounded-2xl border border-white/5 shadow-xl">
+                    <h3 className="text-zinc-100 font-bold mb-6 text-xs uppercase tracking-widest flex items-center gap-2">
+                        <PieChartIcon className="w-4 h-4 text-amber-500"/> İşlem Durum Dağılımı
+                    </h3>
+                    <div className="h-72 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                                <Pie 
+                                    data={analyticsData.statusData} 
+                                    cx="50%" cy="50%" 
+                                    innerRadius={80} 
+                                    outerRadius={100} 
+                                    paddingAngle={5} 
+                                    dataKey="value"
+                                    stroke="none"
+                                >
+                                    {analyticsData.statusData.map((entry, index) => ( <Cell key={`cell-${index}`} fill={entry.color} /> ))}
+                                </Pie>
+                                <RechartsTooltip contentStyle={{backgroundColor: '#18181b', borderColor: '#333', borderRadius: '12px', fontSize: '12px'}} itemStyle={{color:'#fff'}} />
+                                <Legend wrapperStyle={{fontSize: '11px', textTransform: 'uppercase', paddingTop: '20px'}} />
+                            </PieChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+            </div>
         </div>
       )}
 
+      {/* --- MODALS --- */}
+      
+      {/* Delete Confirmation Modal */}
+      {itemToDelete && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+              <div className="bg-zinc-900 p-6 rounded-3xl w-full max-w-sm border border-red-900/30 shadow-2xl scale-100">
+                  <div className="w-12 h-12 rounded-full bg-red-900/20 flex items-center justify-center mb-4 mx-auto border border-red-500/20"> 
+                      <Trash2 className="w-6 h-6 text-red-500"/> 
+                  </div>
+                  <h3 className="text-lg font-bold text-white mb-2 text-center uppercase tracking-tighter">Silme Onayı</h3>
+                  <p className="text-zinc-500 text-[11px] mb-6 text-center leading-relaxed">
+                      Bu stok kaydı kalıcı olarak silinecektir.<br/>Bu işlem geri alınamaz. Devam etmek istiyor musunuz?
+                  </p>
+                  <div className="flex gap-3">
+                      <button onClick={() => setItemToDelete(null)} className="flex-1 py-3 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-zinc-400 text-xs font-bold transition-all uppercase tracking-widest">
+                          Vazgeç
+                      </button>
+                      <button onClick={performDelete} className="flex-1 py-3 bg-red-600 hover:bg-red-500 rounded-xl text-white text-xs font-bold transition-all uppercase tracking-widest shadow-lg shadow-red-900/20"> 
+                          Evet, Sil
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+      
+      {/* Stock Modal */}
+      {showStockModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
+              <div className="bg-zinc-900 w-full max-w-lg p-6 rounded-2xl border border-white/10 shadow-2xl my-8 animate-in zoom-in-95 duration-200">
+                  <h3 className="text-lg font-bold text-zinc-100 mb-6 uppercase tracking-widest flex items-center gap-2">
+                      <Package className="w-5 h-5 text-amber-500"/> {stockForm.id ? 'Ürün Düzenle' : 'Yeni Stok Ekle'}
+                  </h3>
+                  <form onSubmit={handleSaveStock} className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                          <div className="col-span-2">
+                              <label className="text-[10px] text-zinc-500 uppercase font-bold mb-1 block">Ürün Adı</label>
+                              <input required value={stockForm.name} onChange={e => setStockForm({...stockForm, name: e.target.value})} className="w-full bg-zinc-950 border border-zinc-700 rounded-xl p-3 text-xs text-white outline-none focus:border-amber-500/50" />
+                          </div>
+                          <div>
+                              <label className="text-[10px] text-zinc-500 uppercase font-bold mb-1 block">Kategori</label>
+                              <select value={stockForm.category} onChange={e => setStockForm({...stockForm, category: e.target.value})} className="w-full bg-zinc-950 border border-zinc-700 rounded-xl p-3 text-xs text-white outline-none">
+                                  <option>Yedek Parça</option>
+                                  <option>Sarf Malzeme</option>
+                                  <option>Dövme Makinesi</option>
+                                  <option>Güç Kaynağı</option>
+                                  <option>Kablo / Pedal</option>
+                                  <option>Diğer</option>
+                              </select>
+                          </div>
+                           <div>
+                              <label className="text-[10px] text-zinc-500 uppercase font-bold mb-1 block">Ürün Durumu</label>
+                              <select value={stockForm.status || 'new'} onChange={e => setStockForm({...stockForm, status: e.target.value as any})} className="w-full bg-zinc-950 border border-zinc-700 rounded-xl p-3 text-xs text-white outline-none">
+                                  {INVENTORY_STATUS_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                              </select>
+                          </div>
+                          <div>
+                              <label className="text-[10px] text-zinc-500 uppercase font-bold mb-1 block">SKU / Kod</label>
+                              <input value={stockForm.sku || ''} onChange={e => setStockForm({...stockForm, sku: e.target.value})} className="w-full bg-zinc-950 border border-zinc-700 rounded-xl p-3 text-xs text-white outline-none" />
+                          </div>
+                          <div>
+                              <label className="text-[10px] text-zinc-500 uppercase font-bold mb-1 block">Stok Adedi</label>
+                              <input type="number" required value={stockForm.quantity} onChange={e => setStockForm({...stockForm, quantity: parseInt(e.target.value)})} className="w-full bg-zinc-950 border border-zinc-700 rounded-xl p-3 text-xs text-white outline-none" />
+                          </div>
+                          <div>
+                              <label className="text-[10px] text-zinc-500 uppercase font-bold mb-1 block text-red-400">Kritik Seviye</label>
+                              <input type="number" required value={stockForm.critical_level} onChange={e => setStockForm({...stockForm, critical_level: parseInt(e.target.value)})} className="w-full bg-zinc-950 border border-red-900/30 rounded-xl p-3 text-xs text-white focus:border-red-500 outline-none" />
+                          </div>
+                          <div>
+                              <label className="text-[10px] text-zinc-500 uppercase font-bold mb-1 block">Alış Fiyatı</label>
+                              <input type="number" required value={stockForm.buy_price} onChange={e => setStockForm({...stockForm, buy_price: parseFloat(e.target.value)})} className="w-full bg-zinc-950 border border-zinc-700 rounded-xl p-3 text-xs text-white outline-none" />
+                          </div>
+                          <div>
+                              <label className="text-[10px] text-zinc-500 uppercase font-bold mb-1 block text-green-500">Satış Fiyatı</label>
+                              <input type="number" required value={stockForm.sell_price} onChange={e => setStockForm({...stockForm, sell_price: parseFloat(e.target.value)})} className="w-full bg-zinc-950 border border-zinc-700 rounded-xl p-3 text-xs text-white outline-none" />
+                          </div>
+                          <div className="col-span-2">
+                              <label className="text-[10px] text-zinc-500 uppercase font-bold mb-1 block">Raf / Lokasyon</label>
+                              <input value={stockForm.shelf_location || ''} onChange={e => setStockForm({...stockForm, shelf_location: e.target.value})} className="w-full bg-zinc-950 border border-zinc-700 rounded-xl p-3 text-xs text-white outline-none" placeholder="Örn: A1 Rafı" />
+                          </div>
+                           <div className="col-span-2">
+                              <label className="text-[10px] text-zinc-500 uppercase font-bold mb-1 block">Açıklama / Notlar</label>
+                              <textarea rows={3} value={stockForm.notes || ''} onChange={e => setStockForm({...stockForm, notes: e.target.value})} className="w-full bg-zinc-950 border border-zinc-700 rounded-xl p-3 text-xs text-white outline-none resize-none" placeholder="Örn: Hurdaya ayrılma sebebi, arıza detayı..." />
+                          </div>
+                      </div>
+                      <div className="flex justify-end gap-3 mt-6">
+                          <button type="button" onClick={() => setShowStockModal(false)} className="px-4 py-3 rounded-xl bg-zinc-800 text-zinc-400 font-bold text-xs uppercase">Vazgeç</button>
+                          <button type="submit" className="px-6 py-3 rounded-xl bg-amber-500 text-black font-bold text-xs uppercase shadow-lg shadow-amber-900/20">Kaydet</button>
+                      </div>
+                  </form>
+              </div>
+          </div>
+      )}
+
+      {/* CUSTOMER CRM MODAL */}
+      {selectedCustomer && (
+          <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4">
+              <div className="bg-zinc-950 w-[92%] max-w-4xl h-[85vh] rounded-3xl border border-white/10 shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+                  <div className="p-5 border-b border-white/5 bg-zinc-900/50 flex justify-between items-start">
+                      <div className="flex items-center gap-5">
+                          <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center border-2 border-amber-500/20 shadow-lg text-zinc-500"> <User className="w-8 h-8" /> </div>
+                          <div className="min-w-0">
+                              <h2 className="text-xl font-bold text-zinc-100 uppercase tracking-tight truncate">{selectedCustomer.full_name}</h2>
+                              <div className="flex flex-col gap-0.5 mt-1 text-xs text-zinc-400">
+                                  <div className="flex items-center gap-2"><Mail className="w-3 h-3 text-zinc-600" /> {selectedCustomer.email || selectedCustomer.display_email}</div>
+                                  <div className="flex items-center gap-2"><Phone className="w-3 h-3 text-zinc-600" /> {selectedCustomer.phone || selectedCustomer.display_phone}</div>
+                              </div>
+                          </div>
+                      </div>
+                      <button onClick={() => { setSelectedCustomer(null); document.body.style.overflow = 'auto'; }} className="p-1.5 hover:bg-zinc-800 rounded-full transition-colors"><X className="w-5 h-5 text-zinc-400" /></button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-5 space-y-6 custom-scrollbar">
+                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                          <div className="bg-zinc-900/50 p-3 rounded-xl border border-white/5"> <div className="text-[10px] text-zinc-500 font-bold uppercase mb-1 flex items-center gap-2"> <Layers className="w-3 h-3" /> Toplam </div> <div className="text-xl font-bold text-white">{customerSpecificData?.requests.length || 0}</div> </div>
+                          <div className="bg-zinc-900/50 p-3 rounded-xl border border-white/5"> <div className="text-[10px] text-green-500 font-bold uppercase mb-1 flex items-center gap-2"> <CheckCircle className="w-3 h-3" /> Bitti </div> <div className="text-xl font-bold text-white">{selectedCustomer.stats.resolved}</div> </div>
+                          <div className="bg-zinc-900/50 p-3 rounded-xl border border-white/5"> <div className="text-[10px] text-amber-500 font-bold uppercase mb-1 flex items-center gap-2"> <Activity className="w-3 h-3" /> Aktif </div> <div className="text-xl font-bold text-white">{selectedCustomer.stats.pending}</div> </div>
+                          <div className="bg-zinc-900/50 p-3 rounded-xl border border-amber-500/20"> <div className="text-[10px] text-amber-500/80 font-bold uppercase mb-1 flex items-center gap-2"> <Wallet className="w-3 h-3" /> Harcama </div> <div className="text-xl font-bold text-white">{customerSpecificData?.totalSpend.toLocaleString('tr-TR')} TL</div> </div>
+                      </div>
+                      <div>
+                          <h3 className="text-base font-bold text-zinc-200 mb-3 flex items-center gap-2 uppercase tracking-widest"><History className="w-4 h-4 text-amber-500" /> Talep Geçmişi</h3>
+                          <div className="grid gap-2">
+                              {customerSpecificData?.requests.length === 0 ? ( <div className="text-center py-10 border border-dashed border-white/10 rounded-xl text-zinc-500 text-sm uppercase tracking-widest">Kayıt bulunamadı.</div> ) : (
+                                  customerSpecificData?.requests.map(req => (
+                                      <div key={req.id} onClick={() => handleOpenDetail(req)} className="bg-zinc-900 hover:bg-zinc-800 border border-white/5 hover:border-amber-500/20 p-3 rounded-xl cursor-pointer transition-all flex items-center gap-3 group">
+                                          <div className="w-8 h-8 rounded-lg bg-zinc-950 flex items-center justify-center text-zinc-500 border border-white/5 shrink-0"><Smartphone className="w-4 h-4" /></div>
+                                          <div className="flex-1 min-w-0"> <div className="font-bold text-zinc-200 text-sm group-hover:text-amber-500 transition-colors truncate uppercase">{req.brand} {req.model}</div> <div className="text-[10px] text-zinc-600 font-mono tracking-tighter">#{String(req.id).slice(0,6)} • {new Date(req.created_at).toLocaleDateString()}</div> </div>
+                                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border uppercase tracking-wider ${STATUS_OPTIONS.find(o=>o.value===req.status)?.color}`}> {STATUS_OPTIONS.find(o=>o.value===req.status)?.label} </span>
+                                          <ChevronRight className="w-4 h-4 text-zinc-700 group-hover:text-white transition-transform group-hover:translate-x-1" />
+                                      </div>
+                                  ))
+                              )}
+                          </div>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* REQUEST DETAIL MODAL - OPTIMIZED GRID */}
+      {selectedRequest && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+            <div className="bg-zinc-900 w-[95%] sm:w-[92%] max-w-4xl h-[90vh] sm:h-[85vh] rounded-2xl sm:rounded-3xl border border-white/10 shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+                {/* Header: Optimized for Mobile Stacking */}
+                <div className="p-4 sm:p-5 border-b border-white/5 flex justify-between items-start bg-zinc-950">
+                    <div className="flex-1 min-w-0 pr-2">
+                        <h2 className="text-base sm:text-lg font-serif font-bold text-zinc-100 uppercase tracking-widest truncate">Talep Detayı <span className="text-zinc-600 font-mono text-xs sm:text-sm ml-1 sm:ml-2">#{String(selectedRequest.id).slice(0,8)}</span></h2>
+                        <div className="flex flex-col sm:flex-row sm:flex-wrap sm:gap-x-3 text-[10px] sm:text-xs text-zinc-500 mt-1 uppercase tracking-tighter font-medium">
+                            <span className="font-bold text-zinc-300 truncate">{selectedRequest.full_name}</span>
+                            <div className="flex items-center gap-2">
+                                <span className="hidden sm:inline opacity-30">|</span>
+                                <span>{selectedRequest.phone}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <button onClick={handleCloseDetail} className="p-1.5 bg-zinc-800/50 hover:bg-zinc-800 rounded-full transition-all text-zinc-400 shrink-0"><X className="w-5 h-5 sm:w-6 sm:h-6" /></button>
+                </div>
+
+                {/* Tab Switcher: Full Width Buttons */}
+                <div className="flex border-b border-white/5 bg-zinc-900/50 shrink-0">
+                    <button onClick={() => setActiveDetailTab('info')} className={`flex-1 py-3 sm:py-3.5 text-[10px] sm:text-xs font-bold transition-all border-b-2 uppercase tracking-widest ${activeDetailTab === 'info' ? 'text-amber-500 border-amber-500 bg-zinc-800/30' : 'text-zinc-500 border-transparent hover:text-zinc-300'}`}>
+                        <div className="flex items-center justify-center gap-1.5 sm:gap-2"><Info className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> BİLGİLER</div>
+                    </button>
+                    <button onClick={() => setActiveDetailTab('chat')} className={`flex-1 py-3 sm:py-3.5 text-[10px] sm:text-xs font-bold transition-all border-b-2 uppercase tracking-widest ${activeDetailTab === 'chat' ? 'text-amber-500 border-amber-500 bg-zinc-800/30' : 'text-zinc-500 border-transparent hover:text-zinc-300'}`}>
+                        <div className="flex items-center justify-center gap-1.5 sm:gap-2"><MessageCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> MESAJLAR</div>
+                    </button>
+                </div>
+                
+                <div className="flex-1 flex flex-col overflow-hidden relative">
+                    {activeDetailTab === 'info' && (
+                        <div className="absolute inset-0 overflow-y-auto p-4 sm:p-5 space-y-5 sm:space-y-6 bg-zinc-900/50 animate-in fade-in slide-in-from-left-4 duration-300 custom-scrollbar">
+                            
+                            {/* TOP ACTION GRID */}
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 sm:gap-6 items-start">
+                                {/* Left Section: Update Form */}
+                                <div className="lg:col-span-2 space-y-4 p-4 sm:p-5 bg-zinc-950/40 border border-white/5 rounded-xl sm:rounded-2xl shadow-inner">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">İşlem Durumu</label>
+                                            <select value={editForm.status} onChange={(e) => setEditForm({...editForm, status: e.target.value as RequestStatus})} className="w-full bg-zinc-900 border border-zinc-700 rounded-lg sm:rounded-xl p-3 text-zinc-200 text-xs focus:border-amber-500/50 transition-all outline-none">
+                                                {STATUS_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">Servis Bedeli</label>
+                                            <div className="flex gap-2">
+                                                <input type="number" value={editForm.estimated_cost} onChange={e => setEditForm({...editForm, estimated_cost: parseFloat(e.target.value)})} className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg sm:rounded-xl p-3 text-zinc-200 text-xs focus:border-amber-500/50 outline-none transition-all" />
+                                                <select value={editForm.currency} onChange={e => setEditForm({...editForm, currency: e.target.value})} className="w-20 bg-zinc-900 border border-zinc-700 rounded-lg sm:rounded-xl p-3 text-zinc-200 text-xs outline-none">
+                                                    <option>TL</option><option>USD</option><option>EUR</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    {['shipped'].includes(editForm.status) && (
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-3 bg-zinc-900/50 border border-white/5 rounded-xl animate-in fade-in slide-in-from-top-2">
+                                            <div className="space-y-1"> <label className="text-[9px] font-bold text-zinc-600 uppercase ml-1">Kargo Firması</label> <input type="text" placeholder="Firma Adı" value={editForm.shipping_company} onChange={e => setEditForm({...editForm, shipping_company: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-xs" /> </div>
+                                            <div className="space-y-1"> <label className="text-[9px] font-bold text-zinc-600 uppercase ml-1">Takip Numarası</label> <input type="text" placeholder="Takip No" value={editForm.shipping_tracking_code} onChange={e => setEditForm({...editForm, shipping_tracking_code: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-xs" /> </div>
+                                        </div>
+                                    )}
+
+                                    <button onClick={handleSaveChanges} className="w-full bg-white hover:bg-zinc-200 text-black font-bold py-3.5 rounded-xl transition-all text-xs uppercase tracking-widest shadow-lg shadow-white/5 active:scale-95"> Değişiklikleri Kaydet </button>
+                                </div>
+
+                                {/* Right Section: Quick Actions Card */}
+                                <div className="space-y-3 p-4 sm:p-5 bg-zinc-950/40 border border-white/5 rounded-xl sm:rounded-2xl shadow-inner">
+                                    <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest border-b border-white/5 pb-2 mb-2">Hızlı Aksiyonlar</h4>
+                                    <button onClick={handlePreviewPdf} disabled={isGeneratingPdf} className="w-full flex items-center justify-center gap-3 border border-zinc-700 text-zinc-300 hover:text-white hover:border-zinc-500 font-bold py-3 rounded-xl transition-all text-xs uppercase tracking-widest">
+                                        {isGeneratingPdf ? <Loader2 className="w-4 h-4 animate-spin text-amber-500" /> : <FileText className="w-4 h-4" />} SERVİS FORMU (PDF)
+                                    </button>
+                                    <button onClick={() => setShowRejectModal(true)} className="w-full text-red-400 hover:text-red-300 text-[10px] font-bold py-2.5 flex items-center justify-center gap-2 border border-red-900/20 rounded-xl hover:bg-red-900/10 transition-all uppercase tracking-widest mt-2">
+                                        <XCircle className="w-4 h-4" /> Talebi Reddet
+                                    </button>
+                                    <p className="text-[9px] text-zinc-600 text-center uppercase tracking-tighter leading-tight mt-1">Müşteri bilgilendirilecektir.</p>
+                                </div>
+                            </div>
+                            
+                            {/* Device Info Card */}
+                            <div className="bg-zinc-950/20 p-4 sm:p-5 rounded-xl sm:rounded-2xl border border-white/5 space-y-4 sm:space-y-5">
+                                <div className="flex items-center gap-3 border-b border-white/5 pb-3">
+                                    <Smartphone className="w-4 h-4 text-amber-500" />
+                                    <h4 className="font-bold text-zinc-300 text-[11px] uppercase tracking-widest">Cihaz ve Arıza Detayları</h4>
+                                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 px-1">
+                                    <div className="space-y-1"><span className="text-zinc-600 text-[9px] sm:text-[10px] block uppercase font-bold tracking-tighter">Marka</span> <span className="text-zinc-200 text-xs sm:text-sm font-bold uppercase">{selectedRequest.brand}</span></div>
+                                    <div className="space-y-1"><span className="text-zinc-600 text-[9px] sm:text-[10px] block uppercase font-bold tracking-tighter">Model</span> <span className="text-zinc-200 text-xs sm:text-sm font-bold uppercase">{selectedRequest.model}</span></div>
+                                    <div className="space-y-1"><span className="text-zinc-600 text-[9px] sm:text-[10px] block uppercase font-bold tracking-tighter">Kategori</span> <span className="text-zinc-200 text-xs sm:text-sm font-bold uppercase tracking-tight">{selectedRequest.category}</span></div>
+                                </div>
+                                
+                                <div className="bg-amber-500/5 border border-amber-500/10 rounded-xl p-4 sm:p-5 relative">
+                                    <div className="absolute top-0 right-0 p-3 opacity-10"><AlertTriangle className="w-10 h-10 sm:w-12 sm:h-12 text-amber-500" /></div>
+                                    <h5 className="text-amber-500 text-[10px] font-bold uppercase tracking-widest mb-2 flex items-center gap-2"> <Activity className="w-3.5 h-3.5" /> Müşteri Şikayeti </h5>
+                                    <p className="text-amber-100/80 text-xs leading-relaxed italic relative z-10 whitespace-pre-wrap">"{selectedRequest.description}"</p>
+                                </div>
+                            </div>
+
+                            {/* Media Gallery */}
+                            {selectedRequest.media_urls && selectedRequest.media_urls.length > 0 && (
+                                <div className="bg-zinc-950/20 p-4 sm:p-5 rounded-xl sm:rounded-2xl border border-white/5 space-y-4">
+                                    <h4 className="font-bold text-zinc-400 text-[10px] uppercase tracking-widest flex items-center gap-2 border-b border-white/5 pb-2"><ImageIcon className="w-3.5 h-3.5 text-zinc-500"/> Galeri</h4>
+                                    <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2.5 sm:gap-3">
+                                        {selectedRequest.media_urls.map((media, i) => (
+                                            <div key={i} className="aspect-square bg-black rounded-lg overflow-hidden border border-white/10 relative group cursor-pointer hover:border-amber-500/40 transition-all shadow-lg" onClick={() => setLightboxMedia(media)}>
+                                                {media.type === 'video' ? (
+                                                    <div className="absolute inset-0 flex items-center justify-center bg-black/60"><Play className="w-5 h-5 sm:w-6 sm:h-6 text-white opacity-70" /></div>
+                                                ) : (
+                                                    <img src={media.url} className="w-full h-full object-cover opacity-80 group-hover:opacity-100" alt="attachment" />
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {activeDetailTab === 'chat' && (
+                        <div className="absolute inset-0 flex flex-col bg-zinc-950 animate-in fade-in slide-in-from-right-4 duration-300">
+                            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 custom-scrollbar" ref={notesContainerRef}>
+                                 {notes.length === 0 && ( <div className="flex flex-col items-center justify-center h-full opacity-20"> <MessageCircle className="w-12 h-12 sm:w-16 sm:h-16 mb-2" /> <p className="text-xs uppercase tracking-widest font-bold">Henüz mesaj yok.</p> </div> )}
+                                 {notes.map(note => (
+                                     <div key={note.id} className={`flex ${note.author_id === session?.user?.id ? 'justify-end' : 'justify-start'}`}>
+                                         <div className={`max-w-[92%] sm:max-w-[80%] p-3 sm:p-3.5 rounded-2xl shadow-xl ${note.author_id === session?.user?.id ? 'bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-tr-none' : 'bg-zinc-800 text-zinc-200 rounded-tl-none border border-white/5'}`}>
+                                             {note.media_url && (
+                                                 <div className="mb-2.5 rounded-lg overflow-hidden cursor-pointer border border-white/10 shadow-lg" onClick={() => setLightboxMedia({ url: note.media_url!, type: note.media_type || 'image' })}>
+                                                     {note.media_type === 'image' ? <img src={note.media_url} className="max-w-full h-auto" alt="attachment" /> : <div className="bg-black/50 p-6 flex items-center justify-center"><Play className="w-8 h-8 text-white"/></div>}
+                                                 </div>
+                                             )}
+                                             <p className="text-xs leading-relaxed whitespace-pre-wrap">{note.note}</p>
+                                             <div className="text-[8px] sm:text-[9px] opacity-40 mt-2 flex justify-between gap-4 pt-1.5 border-t border-white/5 uppercase tracking-tighter font-bold">
+                                                 <span>{note.author?.full_name}</span>
+                                                 <span>{new Date(note.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                                             </div>
+                                         </div>
+                                     </div>
+                                 ))}
+                            </div>
+                            <div className="p-3 sm:p-4 bg-zinc-900 border-t border-white/5 shadow-2xl shrink-0">
+                                <form onSubmit={handleAddNote} className="flex gap-2">
+                                    <button type="button" onClick={() => fileInputRef.current?.click()} className="p-2.5 sm:p-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 rounded-lg sm:rounded-xl transition-all shadow-md active:scale-90"><Paperclip className="w-4 h-4 sm:w-5 sm:h-5" /></button>
+                                    <input type="file" ref={fileInputRef} onChange={e => setNoteFile(e.target.files?.[0] || null)} className="hidden" />
+                                    <input type="text" value={newNote} onChange={e => setNewNote(e.target.value)} placeholder="Mesaj yazın..." className="flex-1 bg-zinc-950 border border-zinc-700 rounded-lg sm:rounded-xl px-3 sm:px-5 text-sm text-zinc-100 outline-none focus:border-amber-500/50 transition-all shadow-inner" />
+                                    <button type="submit" disabled={isSendingNote} className="p-2.5 sm:p-3 bg-amber-500 hover:bg-amber-400 text-black rounded-lg sm:rounded-xl font-bold transition-all shadow-lg active:scale-90 disabled:opacity-50">{isSendingNote ? <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" /> : <Send className="w-4 h-4 sm:w-5 sm:h-5" />}</button>
+                                </form>
+                                {noteFile && <div className="text-[8px] sm:text-[9px] text-amber-500 mt-2 px-2 truncate font-bold uppercase tracking-widest">Dosya: {noteFile.name}</div>}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+      )}
+      
+      {/* Reject Modal */}
+      {showRejectModal && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/95 backdrop-blur-md p-4">
+              <div className="bg-zinc-900 p-6 rounded-3xl w-full max-w-sm border border-red-900/30 shadow-2xl animate-in zoom-in-95 duration-200">
+                  <div className="w-12 h-12 rounded-full bg-red-900/20 flex items-center justify-center mb-4 mx-auto border border-red-500/20"> <AlertTriangle className="w-6 h-6 text-red-500"/> </div>
+                  <h3 className="text-lg font-bold text-white mb-2 text-center uppercase tracking-tighter">Talebi Reddet</h3>
+                  <p className="text-zinc-500 text-[10px] mb-5 text-center leading-relaxed uppercase tracking-tight">Bu işlem kalıcıdır ve müşteriye anında bildirim olarak düşer. Lütfen geçerli bir sebep belirtin.</p>
+                  <textarea value={rejectionReason} onChange={e => setRejectionReason(e.target.value)} placeholder="Reddetme nedeni (Müşteri görecektir)..." className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-sm text-zinc-100 mb-6 h-28 resize-none outline-none focus:border-red-500/50 transition-all shadow-inner" />
+                  <div className="flex gap-3">
+                      <button onClick={() => setShowRejectModal(false)} className="flex-1 py-3 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-zinc-400 text-xs font-bold transition-all uppercase tracking-widest">Vazgeç</button>
+                      <button onClick={handleRejectSubmit} disabled={isRejecting} className="flex-1 py-3 bg-red-600 hover:bg-red-500 rounded-xl text-white text-xs font-bold transition-all uppercase tracking-widest shadow-lg shadow-red-900/20 disabled:opacity-50"> {isRejecting ? 'Reddediliyor...' : 'Onayla ve Reddet'} </button>
+                  </div>
+              </div>
+          </div>
+      )}
+      
+      {/* Lightbox Overlay */}
+      {lightboxMedia && (
+         <div className="fixed inset-0 z-[100] bg-black/98 flex items-center justify-center p-4 animate-in fade-in duration-300" onClick={() => setLightboxMedia(null)}>
+             <button className="absolute top-6 right-6 p-2 bg-zinc-800 hover:bg-zinc-700 rounded-full text-white transition-all shadow-2xl"><X className="w-8 h-8" /></button>
+             {lightboxMedia.type === 'image' ? (
+                 <img src={lightboxMedia.url} className="max-w-[95%] max-h-[85vh] object-contain shadow-[0_0_50px_rgba(0,0,0,0.5)] rounded-lg" alt="preview" />
+             ) : (
+                 <video src={lightboxMedia.url} controls autoPlay className="max-w-[95%] max-h-[85vh] rounded-lg shadow-2xl" />
+             )}
+         </div>
+      )}
     </div>
   );
 };

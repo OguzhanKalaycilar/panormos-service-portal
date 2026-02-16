@@ -1,4 +1,5 @@
-import React, { useState, useEffect, ErrorInfo, Component } from 'react';
+
+import React, { Component, useState, useEffect, ErrorInfo, ReactNode } from 'react';
 import Layout from './components/Layout';
 import ServiceForm from './components/ServiceForm';
 import AdminDashboard from './components/AdminDashboard';
@@ -8,10 +9,11 @@ import { AuthProvider, useAuth } from './lib/AuthContext';
 import { Loader2, RefreshCw, AlertTriangle, Play } from 'lucide-react';
 import AnchorLogo from './components/AnchorLogo';
 import { supabase } from './lib/supabase';
+import { Toaster } from 'react-hot-toast';
 
 // --- GLOBAL ERROR BOUNDARY ---
 interface ErrorBoundaryProps {
-  children?: React.ReactNode;
+  children?: ReactNode;
 }
 
 interface ErrorBoundaryState {
@@ -20,12 +22,13 @@ interface ErrorBoundaryState {
 }
 
 class GlobalErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  public state: ErrorBoundaryState = {
+    hasError: false,
+    error: null
+  };
+
   constructor(props: ErrorBoundaryProps) {
     super(props);
-    this.state = {
-      hasError: false,
-      error: null
-    };
   }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
@@ -73,7 +76,7 @@ class GlobalErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
       );
     }
 
-    return this.props.children;
+    return (this as any).props.children;
   }
 }
 
@@ -113,7 +116,7 @@ const SplashScreen = () => {
                     <div className="flex flex-col items-center gap-6">
                         <div className="flex flex-col items-center gap-4">
                             <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
-                            <p className="text-zinc-600 text-[10px] uppercase tracking-widest animate-pulse">Sunucuya bağlanılıyor...</p>
+                            <p className="text-zinc-600 text-xs uppercase tracking-widest animate-pulse">Sunucuya bağlanılıyor...</p>
                         </div>
                         
                         {seconds >= 3 && (
@@ -183,7 +186,8 @@ function AppContent() {
       if (currentPath === '#/new-request') {
           return <Layout><ServiceForm /></Layout>;
       }
-      if (currentPath !== '#/admin-dashboard') {
+      // UPDATE: Allow dashboard with query params (notifications link support)
+      if (!currentPath.startsWith('#/admin-dashboard')) {
           window.location.hash = '#/admin-dashboard';
       }
       return <Layout><AdminDashboard /></Layout>;
@@ -191,7 +195,8 @@ function AppContent() {
 
   if (currentPath === '#/new-request') return <Layout><ServiceForm /></Layout>;
   
-  if (currentPath !== '#/my-requests') {
+  // UPDATE: Allow requests with query params (notifications link support)
+  if (!currentPath.startsWith('#/my-requests')) {
       window.location.hash = '#/my-requests';
   }
   return <Layout><CustomerDashboard /></Layout>;
@@ -201,6 +206,33 @@ function App() {
   return (
     <GlobalErrorBoundary>
       <AuthProvider>
+        <Toaster
+            position="top-right"
+            toastOptions={{
+              style: {
+                background: 'rgba(24, 24, 27, 0.95)',
+                backdropFilter: 'blur(16px)',
+                color: '#fff',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                padding: '16px',
+                borderRadius: '12px',
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+              },
+              success: {
+                iconTheme: {
+                  primary: '#D4AF37',
+                  secondary: '#1a1a1a',
+                },
+              },
+              error: {
+                duration: 5000,
+                iconTheme: {
+                   primary: '#ef4444',
+                   secondary: '#fff',
+                }
+              }
+            }}
+        />
         <AppContent />
       </AuthProvider>
     </GlobalErrorBoundary>

@@ -1,9 +1,10 @@
+
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from './supabase';
 import { Session } from '@supabase/supabase-js';
 import { Profile } from '../types';
 
-const INITIAL_LOAD_TIMEOUT = 5000; // Final safety timeout
+const INITIAL_LOAD_TIMEOUT = 8000; // Increased timeout to accommodate retries
 
 interface AuthContextType {
   session: Session | null;
@@ -20,57 +21,78 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchOrCreateProfile = async (currentSession: Session) => {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', currentSession.user.id)
-        .maybeSingle();
+  const fetchOrCreateProfile = async (currentSession: Session): Promise<Profile | null> => {
+    let attempts = 0;
+    const maxAttempts = 3;
 
-      if (error) {
-        console.error("Profile Fetch Error:", error);
-        return null;
-      }
+    while (attempts < maxAttempts) {
+        try {
+          const { data, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', currentSession.user.id)
+            .maybeSingle();
 
-      if (!data) {
-        // Attempt to insert profile if missing
-        const { data: newProfile, error: createError } = await supabase
-          .from('profiles')
-          .insert({
-            id: currentSession.user.id,
-            email: currentSession.user.email,
-            full_name: currentSession.user.user_metadata?.full_name || 'Kullanıcı',
-            role: 'customer',
-            phone: currentSession.user.user_metadata?.phone || '',
-          })
-          .select()
-          .single();
+          if (error) throw error;
 
-        if (createError) {
-          // If RLS blocks insert (42501), assume trigger handled it or it's read-only.
-          // We return null here but don't log as error to avoid noise/panic.
-          if (createError.code === '42501') {
-             console.warn("Profile creation skipped due to RLS (safe if trigger exists).");
-             return null; 
+          if (!data) {
+            // Attempt to insert profile if missing
+            const { data: newProfile, error: createError } = await supabase
+              .from('profiles')
+              .insert({
+                id: currentSession.user.id,
+                email: currentSession.user.email,
+                full_name: currentSession.user.user_metadata?.full_name || 'Kullanıcı',
+                role: 'customer',
+                phone: currentSession.user.user_metadata?.phone || '',
+              })
+              .select()
+              .single();
+
+            if (createError) {
+              // If RLS blocks insert (42501), return valid fallback
+              if (createError.code === '42501') {
+                 console.warn("Profile creation skipped due to RLS.");
+                 return {
+                    id: currentSession.user.id,
+                    email: currentSession.user.email,
+                    full_name: currentSession.user.user_metadata?.full_name || 'Kullanıcı',
+                    role: 'customer',
+                    has_seen_guide: false
+                 } as Profile;
+              }
+              throw createError;
+            }
+            return newProfile as Profile;
           }
-          console.error("Auto-create profile failed:", createError);
-          return null;
-        }
-        return newProfile as Profile;
-      }
 
-      return data as Profile;
-    } catch (err) {
-      console.error("Unexpected Profile Exception:", err);
-      return null;
+          return data as Profile;
+        } catch (err) {
+          attempts++;
+          console.warn(`Profile fetch attempt ${attempts} failed:`, err);
+          
+          if (attempts >= maxAttempts) {
+              console.error("Profile fetch failed after max retries. Using fallback.");
+              // Return ephemeral profile to prevent app crash
+              return {
+                id: currentSession.user.id,
+                email: currentSession.user.email,
+                full_name: currentSession.user.user_metadata?.full_name || 'Kullanıcı',
+                role: 'customer', // Default role
+                has_seen_guide: false
+              } as Profile;
+          }
+          // Exponential backoff: 500ms, 1000ms, 2000ms
+          await new Promise(r => setTimeout(r, 500 * Math.pow(2, attempts - 1)));
+        }
     }
+    return null;
   };
 
   useEffect(() => {
     let mounted = true;
 
-    // Safety timeout to ensure the app ALWAYS boots even if Supabase is slow
+    // Safety timeout
     const bootTimer = setTimeout(() => {
       if (mounted && loading) {
         console.warn("Auth initialization safety timeout triggered.");
@@ -80,23 +102,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const initializeAuth = async () => {
       try {
-        const { data: { session: initialSession } } = await supabase.auth.getSession();
+        // Check for session
+        const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
         
+        if (sessionError) throw sessionError;
+
         if (mounted) {
           setSession(initialSession);
           
           if (initialSession) {
-            // Fetch profile but don't let it block the main 'loading' state if it takes too long
             const userProfile = await fetchOrCreateProfile(initialSession);
             if (mounted) {
               setProfile(userProfile);
               setLoading(false);
-              clearTimeout(bootTimer);
             }
           } else {
             setLoading(false);
-            clearTimeout(bootTimer);
           }
+          clearTimeout(bootTimer);
         }
       } catch (error: any) {
         console.error("Auth Initialization Error:", error);
@@ -112,7 +135,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
       if (!mounted) return;
       
-      if ((event as string) === 'SIGNED_OUT') {
+      if (event === 'SIGNED_OUT') {
         setSession(null);
         setProfile(null);
         setLoading(false);
@@ -121,10 +144,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (newSession) {
         setSession(newSession);
-        // Silently update profile in background on auth changes
-        fetchOrCreateProfile(newSession).then(p => {
-          if (mounted && p) setProfile(p);
-        });
+        // If profile is already loaded and matches user, don't refetch to avoid flicker
+        if (!profile || profile.id !== newSession.user.id) {
+            const p = await fetchOrCreateProfile(newSession);
+            if (mounted && p) setProfile(p);
+        }
       }
     });
 

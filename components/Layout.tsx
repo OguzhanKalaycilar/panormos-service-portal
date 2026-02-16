@@ -1,9 +1,9 @@
 
 import React from 'react';
-import { LogOut, User as UserIcon, Phone } from 'lucide-react';
-import { Toaster } from 'react-hot-toast';
+import { LogOut, User as UserIcon, Phone, Mail } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import AnchorLogo from './AnchorLogo';
+import NotificationCenter from './NotificationCenter';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -14,23 +14,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-zinc-900 via-zinc-950 to-black text-zinc-100 font-sans selection:bg-amber-500/30 selection:text-amber-200">
-      <Toaster
-        position="top-right"
-        toastOptions={{
-          style: {
-            background: 'rgba(24, 24, 27, 0.9)',
-            backdropFilter: 'blur(16px)',
-            color: '#fff',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
-          },
-          success: {
-            iconTheme: {
-              primary: '#D4AF37',
-              secondary: '#1a1a1a',
-            },
-          },
-        }}
-      />
       
       {/* Header */}
       <header className="sticky top-0 z-50 border-b border-white/5 bg-zinc-950/80 backdrop-blur-xl transition-all">
@@ -52,6 +35,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           <nav className="flex items-center gap-2 md:gap-6">
              {session && profile && (
                <div className="flex items-center gap-3 md:gap-4">
+                  {/* Notification Center Added Here */}
+                  <NotificationCenter />
+                  
                   <div className="hidden sm:flex flex-col items-end">
                     <span className="text-sm font-semibold text-zinc-200 leading-none mb-1">{profile.full_name}</span>
                     <span className="text-[9px] uppercase tracking-wider text-amber-500/80 font-bold">{profile.role === 'admin' ? 'Yönetici' : 'Müşteri'}</span>
@@ -72,7 +58,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         </div>
       </header>
 
-      {/* Main Content - Removed z-10 and relative to fix modal layering */}
+      {/* Main Content */}
       <main className="flex-grow w-full">
         {children}
       </main>
@@ -90,11 +76,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           </div>
           
           <div className="flex flex-col items-center justify-center w-full md:w-auto">
-            <a href="tel:+905302623373" className="w-full sm:w-auto flex items-center justify-center gap-3 text-zinc-300 hover:text-amber-500 transition-all text-sm font-medium px-8 py-3 bg-zinc-900 rounded-full border border-white/5 hover:border-amber-500/30 hover:shadow-lg hover:shadow-amber-500/5 group">
+            <a href="mailto:servis@panormostattoo.com" className="w-full sm:w-auto flex items-center justify-center gap-3 text-zinc-300 hover:text-amber-500 transition-all text-sm font-medium px-8 py-3 bg-zinc-900 rounded-full border border-white/5 hover:border-amber-500/30 hover:shadow-lg hover:shadow-amber-500/5 group">
                <div className="p-1.5 bg-zinc-800 rounded-full text-zinc-400 group-hover:text-amber-500 transition-colors">
-                 <Phone className="w-4 h-4" /> 
+                 <Mail className="w-4 h-4" /> 
                </div>
-               <span className="tracking-wide">+90 530 262 33 73</span>
+               <span className="tracking-wide">servis@panormostattoo.com</span>
             </a>
           </div>
 

@@ -169,14 +169,20 @@ const ServiceForm: React.FC = () => {
         description: data.description
       });
 
-      toast.success('Talebiniz başarıyla oluşturuldu!');
+      // UPDATE: More descriptive success message
+      toast.success('Talebiniz başarıyla oluşturuldu! Durumunu "Onarım Geçmişi" bölümünden takip edebilirsiniz.', {
+        duration: 5000,
+        style: {
+          minWidth: '300px',
+        }
+      });
       
       reset();
       setSelectedPhotoNames([]);
       setSelectedVideoNames([]);
       setTimeout(() => {
         window.location.hash = '#/my-requests';
-      }, 1500);
+      }, 2000); // Increased timeout slightly to let them read the toast
 
     } catch (error: any) {
       console.error(error);

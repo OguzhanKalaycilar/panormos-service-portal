@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+
+import React, { useState, useRef, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Loader2, Mail, Lock, User, Phone, ArrowRight } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -12,14 +13,23 @@ const AuthPage: React.FC<AuthPageProps> = ({ initialMode = 'login' }) => {
   const [mode, setMode] = useState<'login' | 'register'>(initialMode);
   const [loading, setLoading] = useState(false);
   
-  // Form State
+  const isSubmitting = useRef(false);
+  const isMounted = useRef(true);
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
 
+  useEffect(() => {
+    isMounted.current = true;
+    return () => { isMounted.current = false; };
+  }, []);
+
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting.current) return;
+    isSubmitting.current = true;
     setLoading(true);
 
     try {
@@ -28,87 +38,42 @@ const AuthPage: React.FC<AuthPageProps> = ({ initialMode = 'login' }) => {
           email,
           password,
         });
-        
         if (error) throw error;
-        
+        if (!isMounted.current) return;
         toast.success('Giriş başarılı!');
-
-        // IMMEDIATELY Fetch Profile & Decide Route
-        // This runs before the global AuthContext listener finishes, 
-        // ensuring the redirect happens as part of the login flow.
         if (user) {
-            const { data: profile } = await supabase
-                .from('profiles')
-                .select('role')
-                .eq('id', user.id)
-                .single();
-            
-            if (profile?.role === 'admin') {
-                window.location.hash = '#/admin-dashboard';
-            } else {
-                window.location.hash = '#/my-requests';
-            }
+            const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+            if (!isMounted.current) return;
+            if (profile?.role === 'admin') window.location.hash = '#/admin-dashboard';
+            else window.location.hash = '#/my-requests';
         }
       } else {
-        // Register
         const { data: authData, error: authError } = await supabase.auth.signUp({
           email,
           password,
-          options: {
-            data: {
-              full_name: fullName,
-              phone: phone, 
-            },
-          },
+          options: { data: { full_name: fullName, phone: phone } },
         });
-
         if (authError) throw authError;
-
         if (authData.user) {
           try {
-             // 1. Robust Profile Creation Check
-             // First check if profile exists (via Trigger or previous attempt)
-             const { data: existingProfile } = await supabase
-                .from('profiles')
-                .select('id')
-                .eq('id', authData.user.id)
-                .maybeSingle();
-
+             const { data: existingProfile } = await supabase.from('profiles').select('id').eq('id', authData.user.id).maybeSingle();
              if (!existingProfile) {
-                // 2. Insert only if not exists
-                const { error: profileError } = await supabase
-                    .from('profiles')
-                    .insert({
-                        id: authData.user.id,
-                        full_name: fullName,
-                        email: email,
-                        phone: phone,
-                        role: 'customer' 
-                    });
-
-                if (profileError) {
-                    // Ignore 42501 (RLS) if it happens, as triggers might have handled it 
-                    // or AuthContext will fix it on next load.
-                    if (profileError.code !== '42501') {
-                         console.error("Profile creation error:", profileError);
-                         throw profileError;
-                    }
-                }
+                const { error: profileError } = await supabase.from('profiles').insert({
+                    id: authData.user.id,
+                    full_name: fullName,
+                    email: email,
+                    phone: phone,
+                    role: 'customer' 
+                });
+                if (profileError && profileError.code !== '42501') throw profileError;
              }
-          } catch (profileErr: any) {
-              console.warn("Non-critical profile setup warning:", profileErr);
-              toast("Profil oluşturulurken bir sorun çıktı, ancak hesabınız açıldı. Giriş yapmayı deneyebilirsiniz.", {
-                 icon: '⚠️'
-              });
-          }
-
-          toast.success('Kayıt başarılı!');
-          
-          if (authData.session) {
-             // Auto-login successful
-             window.location.hash = '#/my-requests';
-          } else {
-             // Email verification required or manual login needed
+          } catch (profileErr) { console.warn(profileErr); }
+          if (!isMounted.current) return;
+          toast.success('Kayıt başarılı! Yönlendiriliyorsunuz...');
+          if (authData.session) window.location.hash = '#/my-requests';
+          else {
+             setLoading(false);
+             isSubmitting.current = false;
              setMode('login');
              window.location.hash = '#/login';
              setPassword(''); 
@@ -116,104 +81,95 @@ const AuthPage: React.FC<AuthPageProps> = ({ initialMode = 'login' }) => {
         }
       }
     } catch (error: any) {
-      toast.error(error.message || 'Bir hata oluştu.');
-    } finally {
-      // Ensure loading state is always cleared
+      if (!isMounted.current) return;
+      const msg = error?.message || '';
+      let errorMessage = 'Bir hata oluştu.';
+      if (msg.includes("Invalid login credentials")) errorMessage = "E-posta veya şifre hatalı.";
+      else if (msg) errorMessage = msg;
+      toast.error(errorMessage);
       setLoading(false);
+      isSubmitting.current = false;
     }
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[85vh] px-4 py-12 relative overflow-hidden">
-      
-      {/* Background Decor */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-amber-500/5 rounded-full blur-3xl pointer-events-none"></div>
+    <div className="flex flex-col items-center justify-center min-h-[85vh] px-4 py-8 relative overflow-hidden">
+      {/* Background Decor - Smaller */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[450px] h-[450px] bg-amber-500/5 rounded-full blur-3xl pointer-events-none"></div>
 
-      <div className="w-full max-w-md relative z-10">
-        <div className="text-center mb-10">
-           <div className="inline-flex items-center justify-center w-24 h-24 rounded-3xl bg-gradient-to-br from-zinc-800 to-black border border-white/10 mb-6 shadow-2xl shadow-black/50">
-              <AnchorLogo className="w-14 h-14" large={true} />
+      <div className="w-[92%] max-w-sm relative z-10">
+        <div className="text-center mb-8">
+           <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-zinc-800 to-black border border-white/10 mb-4 shadow-2xl shadow-black/50">
+              <AnchorLogo className="w-12 h-12" large={true} />
            </div>
-           <h2 className="text-4xl font-serif font-bold text-zinc-100 mb-3 tracking-tight">
+           <h2 className="text-3xl font-serif font-bold text-zinc-100 mb-2 tracking-tight">
              {mode === 'login' ? 'Hoşgeldiniz' : 'Hesap Oluştur'}
            </h2>
-           <p className="text-zinc-400 text-sm">
-             {mode === 'login' 
-               ? 'Teknik servis portalına giriş yapın.' 
-               : 'Servis talebi oluşturmak için kayıt olun.'}
+           <p className="text-zinc-400 text-xs">
+             {mode === 'login' ? 'Teknik servis portalına giriş yapın.' : 'Servis talebi oluşturmak için kayıt olun.'}
            </p>
         </div>
 
-        <div className="glass-panel p-8 md:p-10 rounded-3xl shadow-2xl">
-          <form onSubmit={handleAuth} className="space-y-5">
+        <div className="glass-panel p-6 md:p-8 rounded-2xl shadow-2xl">
+          <form onSubmit={handleAuth} className="space-y-4">
             {mode === 'register' && (
               <>
-                <div className="space-y-1.5">
-                  <label className="text-xs uppercase tracking-widest text-zinc-500 font-bold ml-1">Ad Soyad</label>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold ml-1">Ad Soyad</label>
                   <div className="relative group">
-                    <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500 group-focus-within:text-amber-500 transition-colors" />
+                    <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 group-focus-within:text-amber-500 transition-colors" />
                     <input
-                      type="text"
-                      required
-                      value={fullName}
+                      type="text" required value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
-                      className="w-full bg-zinc-950/50 border border-zinc-700 rounded-xl pl-12 pr-4 py-3.5 text-zinc-100 placeholder-zinc-600 focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/20 outline-none transition-all"
-                      placeholder="Adınız Soyadınız"
+                      className="w-full bg-zinc-950/50 border border-zinc-700 rounded-xl pl-10 pr-4 py-3 text-sm text-zinc-100 placeholder-zinc-600 focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/20 outline-none transition-all"
+                      placeholder="Ad Soyad"
                     />
                   </div>
                 </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs uppercase tracking-widest text-zinc-500 font-bold ml-1">Telefon</label>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold ml-1">Telefon</label>
                   <div className="relative group">
-                    <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500 group-focus-within:text-amber-500 transition-colors" />
+                    <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 group-focus-within:text-amber-500 transition-colors" />
                     <input
-                      type="tel"
-                      required
-                      value={phone}
+                      type="tel" required value={phone}
                       onChange={(e) => setPhone(e.target.value)}
-                      className="w-full bg-zinc-950/50 border border-zinc-700 rounded-xl pl-12 pr-4 py-3.5 text-zinc-100 placeholder-zinc-600 focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/20 outline-none transition-all"
-                      placeholder="0555 123 45 67"
+                      className="w-full bg-zinc-950/50 border border-zinc-700 rounded-xl pl-10 pr-4 py-3 text-sm text-zinc-100 placeholder-zinc-600 focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/20 outline-none transition-all"
+                      placeholder="0555..."
                     />
                   </div>
                 </div>
               </>
             )}
 
-            <div className="space-y-1.5">
-              <label className="text-xs uppercase tracking-widest text-zinc-500 font-bold ml-1">E-posta</label>
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold ml-1">E-posta</label>
               <div className="relative group">
-                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500 group-focus-within:text-amber-500 transition-colors" />
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 group-focus-within:text-amber-500 transition-colors" />
                 <input
-                  type="email"
-                  required
-                  value={email}
+                  type="email" required value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-zinc-950/50 border border-zinc-700 rounded-xl pl-12 pr-4 py-3.5 text-zinc-100 placeholder-zinc-600 focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/20 outline-none transition-all"
+                  className="w-full bg-zinc-950/50 border border-zinc-700 rounded-xl pl-10 pr-4 py-3 text-sm text-zinc-100 placeholder-zinc-600 focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/20 outline-none transition-all"
                   placeholder="ornek@email.com"
                 />
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-xs uppercase tracking-widest text-zinc-500 font-bold ml-1">Şifre</label>
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold ml-1">Şifre</label>
               <div className="relative group">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500 group-focus-within:text-amber-500 transition-colors" />
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 group-focus-within:text-amber-500 transition-colors" />
                 <input
-                  type="password"
-                  required
-                  value={password}
+                  type="password" required value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-zinc-950/50 border border-zinc-700 rounded-xl pl-12 pr-4 py-3.5 text-zinc-100 placeholder-zinc-600 focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/20 outline-none transition-all"
-                  placeholder="••••••••"
-                  minLength={6}
+                  className="w-full bg-zinc-950/50 border border-zinc-700 rounded-xl pl-10 pr-4 py-3 text-sm text-zinc-100 placeholder-zinc-600 focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/20 outline-none transition-all"
+                  placeholder="••••••••" minLength={6}
                 />
               </div>
             </div>
 
             <button
-              type="submit"
-              disabled={loading}
-              className="w-full mt-6 bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-400 hover:to-yellow-500 text-black font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-900/20 hover:shadow-amber-900/40 hover:-translate-y-0.5"
+              type="submit" disabled={loading}
+              className="w-full mt-4 bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-400 hover:to-yellow-500 text-black font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-900/20 active:scale-95 disabled:opacity-70"
             >
               {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (
                 <>
@@ -224,8 +180,8 @@ const AuthPage: React.FC<AuthPageProps> = ({ initialMode = 'login' }) => {
             </button>
           </form>
 
-          <div className="mt-8 pt-6 border-t border-white/5 text-center">
-            <p className="text-zinc-500 text-sm">
+          <div className="mt-6 pt-4 border-t border-white/5 text-center">
+            <p className="text-zinc-500 text-xs">
               {mode === 'login' ? "Hesabınız yok mu?" : "Zaten hesabınız var mı?"}
               <button 
                 onClick={() => {
@@ -233,7 +189,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ initialMode = 'login' }) => {
                   setMode(newMode);
                   window.location.hash = `#/${newMode}`;
                 }}
-                className="ml-2 text-amber-500 hover:text-amber-400 font-medium underline-offset-4 hover:underline transition-all"
+                className="ml-2 text-amber-500 hover:text-amber-400 font-medium transition-all"
               >
                 {mode === 'login' ? "Hemen Kayıt Olun" : "Giriş Yapın"}
               </button>

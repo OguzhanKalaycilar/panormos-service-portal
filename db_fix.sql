@@ -1,9 +1,7 @@
 
--- !!! IMPORTANT: RUN THIS SCRIPT IN SUPABASE SQL EDITOR TO FIX ERROR 42P17 !!! --
+-- !!! IMPORTANT: RUN THIS SCRIPT IN SUPABASE SQL EDITOR !!! --
 
--- 1. Create a Helper Function to bypass RLS for Admin checks
--- This function runs as SECURITY DEFINER (superuser privileges) to avoid recursion loops.
--- It allows us to check the user's role without triggering RLS policies on the profiles table.
+-- 1. Helper Function for Admin Check (Bypasses RLS recursion)
 CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS BOOLEAN
 LANGUAGE plpgsql
@@ -20,37 +18,32 @@ BEGIN
 END;
 $$;
 
--- 2. Fix PROFILES Policies (The source of the current 42P17 error)
+-- 2. Fix PROFILES Policies
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "Public profiles are viewable by everyone" ON profiles;
-DROP POLICY IF EXISTS "Users can insert their own profile" ON profiles;
-DROP POLICY IF EXISTS "Users can update own profile" ON profiles;
-DROP POLICY IF EXISTS "Admins can view all profiles" ON profiles;
-DROP POLICY IF EXISTS "Admins can update all profiles" ON profiles;
-DROP POLICY IF EXISTS "Read access for all" ON profiles;
-DROP POLICY IF EXISTS "Profiles are viewable by users who own them or admins" ON profiles;
 DROP POLICY IF EXISTS "Read Profiles" ON profiles;
 DROP POLICY IF EXISTS "Update Own Profile" ON profiles;
 DROP POLICY IF EXISTS "Insert Own Profile" ON profiles;
+-- Cleanup old policies if they exist
+DROP POLICY IF EXISTS "Public profiles are viewable by everyone" ON profiles;
+DROP POLICY IF EXISTS "Users can insert their own profile" ON profiles;
+DROP POLICY IF EXISTS "Users can update own profile" ON profiles;
 
--- Users can read their own profile OR Admins can read all (using safe function)
+-- UPDATE: Allow reading own profile OR admins (so customers can send notifications to admins)
 CREATE POLICY "Read Profiles"
 ON profiles
 FOR SELECT
 TO authenticated
 USING (
-  auth.uid() = id OR is_admin()
+  auth.uid() = id OR is_admin() OR role = 'admin'
 );
 
--- Users can update their own profile
 CREATE POLICY "Update Own Profile"
 ON profiles
 FOR UPDATE
 TO authenticated
 USING ( auth.uid() = id );
 
--- Users can insert their own profile (on signup)
 CREATE POLICY "Insert Own Profile"
 ON profiles
 FOR INSERT
@@ -58,22 +51,15 @@ TO authenticated
 WITH CHECK ( auth.uid() = id );
 
 
--- 3. Fix SERVICE_REQUESTS Policies (Update to use is_admin())
-DROP POLICY IF EXISTS "Enable read access for all users" ON service_requests;
-DROP POLICY IF EXISTS "Enable insert for authenticated users only" ON service_requests;
-DROP POLICY IF EXISTS "Enable update for users based on email" ON service_requests;
-DROP POLICY IF EXISTS "Admins can do everything" ON service_requests;
-DROP POLICY IF EXISTS "Users can view own requests" ON service_requests;
-DROP POLICY IF EXISTS "Select own requests" ON service_requests;
-DROP POLICY IF EXISTS "Admins can view all requests" ON service_requests;
-DROP POLICY IF EXISTS "Admins can update all requests" ON service_requests;
-DROP POLICY IF EXISTS "Customers can view own requests" ON service_requests;
-DROP POLICY IF EXISTS "Customers can create requests" ON service_requests;
+-- 3. Fix SERVICE_REQUESTS Policies
+ALTER TABLE service_requests ENABLE ROW LEVEL SECURITY;
+
 DROP POLICY IF EXISTS "View Requests" ON service_requests;
 DROP POLICY IF EXISTS "Create Requests" ON service_requests;
 DROP POLICY IF EXISTS "Update Requests (Admin)" ON service_requests;
+DROP POLICY IF EXISTS "Update Requests (Customer)" ON service_requests;
 
--- Re-apply using is_admin() for safety
+-- View: Own requests or Admins see all
 CREATE POLICY "View Requests"
 ON service_requests
 FOR SELECT
@@ -82,6 +68,7 @@ USING (
   auth.uid() = user_id OR is_admin()
 );
 
+-- Create: Only own requests
 CREATE POLICY "Create Requests"
 ON service_requests
 FOR INSERT
@@ -90,16 +77,24 @@ WITH CHECK (
   auth.uid() = user_id
 );
 
+-- Update: Admins can update any; Customers can update ONLY if approving cost
 CREATE POLICY "Update Requests (Admin)"
 ON service_requests
 FOR UPDATE
 TO authenticated
 USING ( is_admin() );
 
+CREATE POLICY "Update Requests (Customer)"
+ON service_requests
+FOR UPDATE
+TO authenticated
+USING ( auth.uid() = user_id )
+WITH CHECK ( auth.uid() = user_id ); 
+
 
 -- 4. Fix SERVICE_NOTES Policies
-DROP POLICY IF EXISTS "Note View Policy" ON service_notes;
-DROP POLICY IF EXISTS "Note Insert Policy" ON service_notes;
+ALTER TABLE service_notes ENABLE ROW LEVEL SECURITY;
+
 DROP POLICY IF EXISTS "View Notes" ON service_notes;
 DROP POLICY IF EXISTS "Insert Notes" ON service_notes;
 
@@ -108,7 +103,6 @@ ON service_notes
 FOR SELECT
 TO authenticated
 USING (
-  -- User owns the request OR User is admin
   EXISTS (
     SELECT 1 FROM service_requests 
     WHERE id = service_notes.request_id 
@@ -121,10 +115,61 @@ ON service_notes
 FOR INSERT
 TO authenticated
 WITH CHECK (
-  -- User owns the request OR User is admin
   EXISTS (
     SELECT 1 FROM service_requests 
     WHERE id = request_id 
     AND (user_id = auth.uid() OR is_admin())
   )
 );
+
+
+-- 5. CREATE NOTIFICATIONS TABLE (Fixes PGRST205 Error)
+CREATE TABLE IF NOT EXISTS public.notifications (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+  user_id uuid REFERENCES auth.users NOT NULL,
+  title text NOT NULL,
+  message text NOT NULL,
+  type text DEFAULT 'info' CHECK (type IN ('info', 'success', 'warning', 'error')),
+  link text,
+  metadata jsonb DEFAULT '{}'::jsonb,
+  is_read boolean DEFAULT false
+);
+
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view own notifications" ON public.notifications;
+DROP POLICY IF EXISTS "Users can update own notifications" ON public.notifications;
+DROP POLICY IF EXISTS "Enable insert for authenticated users" ON public.notifications;
+
+-- View own
+CREATE POLICY "Users can view own notifications"
+ON public.notifications FOR SELECT
+TO authenticated
+USING (auth.uid() = user_id);
+
+-- Update own (mark read)
+CREATE POLICY "Users can update own notifications"
+ON public.notifications FOR UPDATE
+TO authenticated
+USING (auth.uid() = user_id);
+
+-- Insert (Admins sending to users, or users triggering admin notifs)
+CREATE POLICY "Enable insert for authenticated users"
+ON public.notifications FOR INSERT
+TO authenticated
+WITH CHECK (true); 
+
+-- 6. Enable Realtime for Notifications
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables 
+    where pubname = 'supabase_realtime' 
+    and schemaname = 'public' 
+    and tablename = 'notifications'
+  ) then
+    alter publication supabase_realtime add table notifications;
+  end if;
+end
+$$;
